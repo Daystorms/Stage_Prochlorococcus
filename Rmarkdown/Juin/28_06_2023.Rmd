@@ -1,0 +1,1564 @@
+---
+title: "28_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-28"
+output: html_document
+---
+
+```{r Packages, message=FALSE, warning=FALSE, include=TRUE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+library(phytools)
+library(rpart)
+library(tidyr)
+library(tibble)
+library(dplyr)
+library(reshape2)
+library(ggpmisc)
+set.seed(1234)
+```
+
+# <span style="color:purple"> Mise à la même échelle des barplots et modification pour suppression des COGS full "0" </span>
+
+# <span style="color:red"> Partie 1 : Etude de la fluidité (backbone vs ISL1/2/2.1 vs ISL3/5 vs ISL4) sur la complétion > 90% </span>
+
+## <span style="color:blue"> Importation des données </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+tree <- read.tree("/home/maarque/Donnees_projet/Data/SAGs_reduits/SAGs_reduits_reroot.nwk")
+
+pa <- read_rtab("/home/maarque/Donnees_projet/Data/SAGs_reduits/matrix_SAGs_reduits.tab")
+
+fit <- panstripe(pa, tree, family="quasipoisson")
+
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+data_x=gt$x
+data_y=gt$y
+data_labels=round(gt$trait)
+
+#Arbre gain/perte qui affiche les gains/pertes de gènes
+plot_gain_loss(fit,tip_label = FALSE)+geom_tiplab(align=TRUE,size=1.2,color="black")+ geom_text(aes(data_x,data_y),label=data_labels, check_overlap = FALSE, color="red", size=1.5,hjust=-0.3,vjust=-0.1)
+```
+
+## <span style="color:blue"> Import de la matrice d'annotations </span>
+
+```{r, include = TRUE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Annot_All_COGS.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Data_count/Count_BASH/family.txt", header=T, sep="\t", check.names = F)
+raw_data=raw_data[!(apply(raw_data[, 3:(ncol(raw_data)-4)], 1, function(x) all(x == 0))), ]
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+data_merge_spec=cbind(data_merge_spec,All_events=data_merge_spec$Gains+data_merge_spec$Losses)
+```
+
+## <span style="color:blue"> Fluidité des compartiments core + flex </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Calcul de la fluidité moyenne par compartiment génétique
+fluidite_par_compartiment <- tapply(data_merge_spec$All_events, data_merge_spec$compartiment, mean)
+
+nombre_COGS_par_compartiment <- tapply(data_merge_spec$COG, data_merge_spec$compartiment, length)
+
+# Créer un nouveau data frame avec les résultats
+COGS_fluidite_par_compartiment <- data.frame(compartiment = names(fluidite_par_compartiment),
+                                 fluidite = fluidite_par_compartiment,
+                                 nombre_COGS = nombre_COGS_par_compartiment)
+
+
+```
+
+## <span style="color:blue"> Différenciation core/flex </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+
+core=tapply(data_merge_spec$All_events[data_merge_spec$gentype == "core"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+               mean)
+
+# Calculer la moyenne par compartiment pour le type "flex"
+flex=tapply(data_merge_spec$All_events[data_merge_spec$gentype == "flex"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+               mean)
+
+# Compter le nombre de COGS par compartiment pour le type "core"
+nombre_COGS_core=tapply(data_merge_spec$COG[data_merge_spec$gentype == "core"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+                           length)
+
+# Compter le nombre de COGS par compartiment pour le type "flex"
+nombre_COGS_flex=tapply(data_merge_spec$COG[data_merge_spec$gentype == "flex"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+                           length)
+
+COGS_core <- data.frame(compartiment = names(core), fluidite = core, nombre_COGS = nombre_COGS_core)
+COGS_flex <- data.frame(compartiment = names(flex), fluidite = flex, nombre_COGS = nombre_COGS_flex)
+
+
+```
+
+## <span style="color:blue"> Résultats </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+#Rapport de fluidité par compartiments
+print(fluidite_par_compartiment)
+
+#Rapport de fluidité par compartiments core
+print(core)
+
+#Rapport de fluidité par compartiments flex
+print(flex)
+```
+
+
+## <span style="color:blue"> BAR Plots </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+melt_all=melt(fluidite_par_compartiment)
+melt_all_clean=cbind(melt_all,COGS=t(t(COGS_fluidite_par_compartiment[,3])))
+melt_all_clean=melt_all_clean[-c(1,3),]
+
+melt_core=melt(core)
+melt_core_clean=cbind(melt_core,COGS=t(t(COGS_core[,3])))
+
+
+melt_flex=melt(flex)
+melt_flex_clean=cbind(melt_flex,COGS=t(t(COGS_flex[,3])))
+melt_flex_clean=melt_flex_clean[-c(1),]
+
+ggplot(melt_all_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome core + flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+
+ggplot(melt_core_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome core") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+
+ggplot(melt_flex_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.1, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+```
+
+## <span style="color:blue"> VIOLIN Plots </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Supprimer les lignes contenant "comp" ou "Ambiguous" dans la colonne "compartiment"
+data_merge_spec2=subset(data_merge_spec, !grepl("comp|Ambiguous", compartiment) & grepl("",compartiment))
+
+# Pour gentype core + flex
+ggplot(data_merge_spec2, aes(x = compartiment, y = All_events, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("Violin plot du nombre d'évènements par compartiments pour le génome CORE + FLEX") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+# Filtrer les données pour le gentype "core"
+data_core=subset(data_merge_spec2, gentype == "core")
+
+ggplot(data_core, aes(x = compartiment, y = All_events, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("Violin plot du nombre d'évènements par compartiments pour le génome CORE") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+# Filtrer les données pour le gentype "flex"
+data_flex=subset(data_merge_spec2, gentype == "flex")
+
+ggplot(data_flex, aes(x = compartiment, y = All_events, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("Violin plot du nombre d'évènements par compartiments pour le génome FLEX") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+
+```
+
+## <span style="color:blue"> Fluidité des compartiments en gain vs pertes </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+
+fluidite_par_compartiment_gain=tapply(data_merge_spec$Gains, data_merge_spec$compartiment, mean)
+fluidite_par_compartiment_loss=tapply(data_merge_spec$Losses, data_merge_spec$compartiment, mean)
+
+nombre_COGS_par_compartiment_gain <- tapply(data_merge_spec$Gains, data_merge_spec$compartiment, length)
+nombre_COGS_par_compartiment_loss <- tapply(data_merge_spec$Losses, data_merge_spec$compartiment, length)
+
+COGS_fluidite_par_compartiment_gain <- data.frame(compartiment = names(fluidite_par_compartiment_gain),
+                                 fluidite = fluidite_par_compartiment_gain,
+                                 nombre_COGS = nombre_COGS_par_compartiment_gain)
+
+COGS_fluidite_par_compartiment_loss <- data.frame(compartiment = names(fluidite_par_compartiment_loss),
+                                 fluidite = fluidite_par_compartiment_loss,
+                                 nombre_COGS = nombre_COGS_par_compartiment_loss)
+
+
+
+
+
+core_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "core"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+               mean)
+core_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "core"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+               mean)
+
+
+
+flex_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "flex"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+               mean)
+flex_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "flex"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+               mean)
+
+
+nombre_COGS_core_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "core"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+                           length)
+nombre_COGS_core_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "core"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+                           length)
+
+# Compter le nombre de COGS par compartiment pour le type "flex"
+nombre_COGS_flex_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "flex"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+                           length)
+nombre_COGS_flex_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "flex"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+                           length)
+
+
+
+COGS_core_gain <- data.frame(compartiment = names(core_gain), fluidite = core_gain, nombre_COGS = nombre_COGS_core_gain)
+COGS_core_loss <- data.frame(compartiment = names(core_loss), fluidite = core_loss, nombre_COGS = nombre_COGS_core_loss)
+
+COGS_flex_gain <- data.frame(compartiment = names(flex_gain), fluidite = flex_gain, nombre_COGS = nombre_COGS_flex_gain)
+COGS_flex_loss <- data.frame(compartiment = names(flex_loss), fluidite = flex_loss, nombre_COGS = nombre_COGS_flex_loss)
+
+```
+
+## <span style="color:blue"> BAR Plots GAIN LOSS </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+melt_all_gain=melt(fluidite_par_compartiment_gain)
+melt_all_gain_clean=cbind(melt_all_gain,COGS=t(t(COGS_fluidite_par_compartiment_gain[,3])))
+melt_all_gain_clean=melt_all_gain_clean[-c(1,3),]
+
+melt_all_loss=melt(fluidite_par_compartiment_loss)
+melt_all_loss_clean=cbind(melt_all_loss,COGS=t(t(COGS_fluidite_par_compartiment_loss[,3])))
+melt_all_loss_clean=melt_all_loss_clean[-c(1,3),]
+
+
+
+melt_core_gain=melt(core_gain)
+melt_core_gain_clean=cbind(melt_core_gain,COGS=t(t(COGS_core_gain[,3])))
+
+melt_core_loss=melt(core_loss)
+melt_core_loss_clean=cbind(melt_core_loss,COGS=t(t(COGS_core_loss[,3])))
+
+
+melt_flex_gain=melt(flex_gain)
+melt_flex_gain_clean=cbind(melt_flex_gain,COGS=t(t(COGS_flex_gain[,3])))
+melt_flex_gain_clean=melt_flex_gain_clean[-c(1),]
+
+melt_flex_loss=melt(flex_loss)
+melt_flex_loss_clean=cbind(melt_flex_loss,COGS=t(t(COGS_flex_loss[,3])))
+melt_flex_loss_clean=melt_flex_loss_clean[-c(1),]
+
+ggplot(melt_all_gain_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("GAIN : Fluidité en fonction des compartiments pour le génome core + flex (18)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  geom_label(aes(label = COGS), y=-0.1, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_all_loss_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("LOSS : Fluidité en fonction des compartiments pour le génome core + flex (18)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  geom_label(aes(label = COGS), y=-0.1, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+
+
+
+ggplot(melt_core_gain_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("GAIN : Fluidité en fonction des compartiments pour le génome core (18)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.1, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_core_loss_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("LOSS : Fluidité en fonction des compartiments pour le génome core (18)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.1, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_flex_gain_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("GAIN : Fluidité en fonction des compartiments pour le génome flex (18)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_flex_loss_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("LOSS : Fluidité en fonction des compartiments pour le génome flex (18)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+```
+
+## <span style="color:blue"> VIOLIN Plots GAIN LOSS </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Supprimer les lignes contenant "comp" ou "Ambiguous" dans la colonne "compartiment"
+data_merge_spec2=subset(data_merge_spec, !grepl("comp|Ambiguous", compartiment) & grepl("",compartiment))
+
+
+# Pour gentype core + flex
+ggplot(data_merge_spec2, aes(x = compartiment, y = Gains, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("GAINS : Violin plot du nombre d'évènements par compartiments pour le génome CORE + FLEX (18)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+ggplot(data_merge_spec2, aes(x = compartiment, y = Losses, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("LOSSES : Violin plot du nombre d'évènements par compartiments pour le génome CORE + FLEX (18)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+
+# Filtrer les données pour le gentype "core"
+data_core=subset(data_merge_spec2, gentype == "core")
+
+ggplot(data_core, aes(x = compartiment, y = Gains, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("GAINS : Violin plot du nombre d'évènements par compartiments pour le génome CORE (18)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+ggplot(data_core, aes(x = compartiment, y = Losses, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("LOSSES : Violin plot du nombre d'évènements par compartiments pour le génome CORE (18)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+
+# Filtrer les données pour le gentype "flex"
+data_flex=subset(data_merge_spec2, gentype == "flex")
+
+ggplot(data_flex, aes(x = compartiment, y = Gains, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("GAINS : Violin plot du nombre d'évènements par compartiments pour le génome FLEX (18)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+ggplot(data_flex, aes(x = compartiment, y = Losses, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("LOSSES : Violin plot du nombre d'évènements par compartiments pour le génome FLEX (18)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+```
+
+
+# <span style="color:red"> Partie 2 : Phylogénie et fluidité des 7 génomes de références HLI et HLII </span>
+
+## <span style="color:blue"> Importation des données </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+HLI=c("MED4","MIT9515")
+HLII=c("P9312","MIT9215","AS9601","MIT9202","MIT9301")
+HL=c(HLI,HLII)
+
+tree=read.tree("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/REROOT_RAxML_bestTree.ALL_concatenated_cogs.nwk")
+pa=read_rtab("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Matrice_fusionnee.tsv")
+
+tree = KeepTip(tree, HL, preorder = TRUE)
+pa=pa[HL,]
+```
+
+## <span style="color:blue"> Utilisation de panstripe </span>
+
+```{r, include = TRUE, message=FALSE}
+fit <- panstripe(pa, tree, family="quasipoisson")
+```
+
+## <span style="color:blue"> Plot du gain/perte </span>
+
+```{r, include = TRUE, message=FALSE}
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+data_x=gt$x
+data_y=gt$y
+data_labels=round(gt$trait)
+
+#Arbre gain/perte qui affiche les gains/pertes de gènes
+plot_gain_loss(fit,tip_label = FALSE)+geom_tiplab(align=TRUE,size=1.2,color="black")+ geom_text(aes(data_x,data_y),label=data_labels, check_overlap = FALSE, color="red", size=1.5,hjust=-0.3,vjust=-0.1)
+```
+
+
+## <span style="color:blue"> Annotations des COGS + importation données COUNT </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Annot_All_COGS.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/7_Genrefs/COUNT_bash/family.txt", header=T, sep="\t", check.names = F)
+raw_data=raw_data[!(apply(raw_data[, 3:(ncol(raw_data)-4)], 1, function(x) all(x == 0))), ]
+
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+data_merge_spec=cbind(data_merge_spec,All_events=data_merge_spec$Gains+data_merge_spec$Losses)
+```
+
+## <span style="color:blue"> Fluidité des compartiments core + flex </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Calcul de la fluidité moyenne par compartiment génétique
+fluidite_par_compartiment <- tapply(data_merge_spec$All_events, data_merge_spec$compartiment, mean)
+
+nombre_COGS_par_compartiment <- tapply(data_merge_spec$COG, data_merge_spec$compartiment, length)
+
+# Créer un nouveau data frame avec les résultats
+COGS_fluidite_par_compartiment <- data.frame(compartiment = names(fluidite_par_compartiment),
+                                 fluidite = fluidite_par_compartiment,
+                                 nombre_COGS = nombre_COGS_par_compartiment)
+
+
+```
+
+## <span style="color:blue"> Différenciation core/flex </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+
+core=tapply(data_merge_spec$All_events[data_merge_spec$gentype == "core"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+               mean)
+
+# Calculer la moyenne par compartiment pour le type "flex"
+flex=tapply(data_merge_spec$All_events[data_merge_spec$gentype == "flex"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+               mean)
+
+# Compter le nombre de COGS par compartiment pour le type "core"
+nombre_COGS_core=tapply(data_merge_spec$COG[data_merge_spec$gentype == "core"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+                           length)
+
+# Compter le nombre de COGS par compartiment pour le type "flex"
+nombre_COGS_flex=tapply(data_merge_spec$COG[data_merge_spec$gentype == "flex"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+                           length)
+
+COGS_core <- data.frame(compartiment = names(core), fluidite = core, nombre_COGS = nombre_COGS_core)
+COGS_flex <- data.frame(compartiment = names(flex), fluidite = flex, nombre_COGS = nombre_COGS_flex)
+
+
+```
+
+## <span style="color:blue"> Résultats </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+#Rapport de fluidité par compartiments
+print(fluidite_par_compartiment)
+
+#Rapport de fluidité par compartiments core
+print(core)
+
+#Rapport de fluidité par compartiments flex
+print(flex)
+```
+
+
+## <span style="color:blue"> BAR Plots </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+melt_all=melt(fluidite_par_compartiment)
+melt_all_clean=cbind(melt_all,COGS=t(t(COGS_fluidite_par_compartiment[,3])))
+melt_all_clean=melt_all_clean[-c(1,3),]
+
+
+melt_core=melt(core)
+melt_core_clean=cbind(melt_core,COGS=t(t(COGS_core[,3])))
+
+
+melt_flex=melt(flex)
+melt_flex_clean=cbind(melt_flex,COGS=t(t(COGS_flex[,3])))
+melt_flex_clean=melt_flex_clean[-c(1),]
+
+ggplot(melt_all_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome core + flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_core_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome core") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_flex_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+```
+
+## <span style="color:blue"> VIOLIN Plots </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Supprimer les lignes contenant "comp" ou "Ambiguous" dans la colonne "compartiment"
+data_merge_spec2=subset(data_merge_spec, !grepl("comp|Ambiguous", compartiment) & grepl("",compartiment))
+
+# Pour gentype core + flex
+ggplot(data_merge_spec2, aes(x = compartiment, y = All_events, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("Violin plot du nombre d'évènements par compartiments pour le génome CORE + FLEX") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+
+
+
+# Filtrer les données pour le gentype "core"
+data_core=subset(data_merge_spec2, gentype == "core")
+
+ggplot(data_core, aes(x = compartiment, y = All_events, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("Violin plot du nombre d'évènements par compartiments pour le génome CORE") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+# Filtrer les données pour le gentype "flex"
+data_flex=subset(data_merge_spec2, gentype == "flex")
+
+ggplot(data_flex, aes(x = compartiment, y = All_events, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("Violin plot du nombre d'évènements par compartiments pour le génome FLEX") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+
+```
+
+## <span style="color:blue"> Fluidité des compartiments en gain vs pertes </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+
+fluidite_par_compartiment_gain=tapply(data_merge_spec$Gains, data_merge_spec$compartiment, mean)
+fluidite_par_compartiment_loss=tapply(data_merge_spec$Losses, data_merge_spec$compartiment, mean)
+
+nombre_COGS_par_compartiment_gain <- tapply(data_merge_spec$Gains, data_merge_spec$compartiment, length)
+nombre_COGS_par_compartiment_loss <- tapply(data_merge_spec$Losses, data_merge_spec$compartiment, length)
+
+COGS_fluidite_par_compartiment_gain <- data.frame(compartiment = names(fluidite_par_compartiment_gain),
+                                 fluidite = fluidite_par_compartiment_gain,
+                                 nombre_COGS = nombre_COGS_par_compartiment_gain)
+
+COGS_fluidite_par_compartiment_loss <- data.frame(compartiment = names(fluidite_par_compartiment_loss),
+                                 fluidite = fluidite_par_compartiment_loss,
+                                 nombre_COGS = nombre_COGS_par_compartiment_loss)
+
+
+
+
+
+core_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "core"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+               mean)
+core_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "core"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+               mean)
+
+
+
+flex_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "flex"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+               mean)
+flex_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "flex"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+               mean)
+
+
+nombre_COGS_core_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "core"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+                           length)
+nombre_COGS_core_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "core"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+                           length)
+
+# Compter le nombre de COGS par compartiment pour le type "flex"
+nombre_COGS_flex_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "flex"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+                           length)
+nombre_COGS_flex_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "flex"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+                           length)
+
+
+
+COGS_core_gain <- data.frame(compartiment = names(core_gain), fluidite = core_gain, nombre_COGS = nombre_COGS_core_gain)
+COGS_core_loss <- data.frame(compartiment = names(core_loss), fluidite = core_loss, nombre_COGS = nombre_COGS_core_loss)
+
+COGS_flex_gain <- data.frame(compartiment = names(flex_gain), fluidite = flex_gain, nombre_COGS = nombre_COGS_flex_gain)
+COGS_flex_loss <- data.frame(compartiment = names(flex_loss), fluidite = flex_loss, nombre_COGS = nombre_COGS_flex_loss)
+
+```
+
+## <span style="color:blue"> BAR Plots GAIN LOSS </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+melt_all_gain=melt(fluidite_par_compartiment_gain)
+melt_all_gain_clean=cbind(melt_all_gain,COGS=t(t(COGS_fluidite_par_compartiment_gain[,3])))
+melt_all_gain_clean=melt_all_gain_clean[-c(1,3),]
+
+melt_all_loss=melt(fluidite_par_compartiment_loss)
+melt_all_loss_clean=cbind(melt_all_loss,COGS=t(t(COGS_fluidite_par_compartiment_loss[,3])))
+melt_all_loss_clean=melt_all_loss_clean[-c(1,3),]
+
+
+
+melt_core_gain=melt(core_gain)
+melt_core_gain_clean=cbind(melt_core_gain,COGS=t(t(COGS_core_gain[,3])))
+
+melt_core_loss=melt(core_loss)
+melt_core_loss_clean=cbind(melt_core_loss,COGS=t(t(COGS_core_loss[,3])))
+
+
+melt_flex_gain=melt(flex_gain)
+melt_flex_gain_clean=cbind(melt_flex_gain,COGS=t(t(COGS_flex_gain[,3])))
+melt_flex_gain_clean=melt_flex_gain_clean[-c(1),]
+
+melt_flex_loss=melt(flex_loss)
+melt_flex_loss_clean=cbind(melt_flex_loss,COGS=t(t(COGS_flex_loss[,3])))
+melt_flex_loss_clean=melt_flex_loss_clean[-c(1),]
+
+ggplot(melt_all_gain_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("GAIN : Fluidité en fonction des compartiments pour le génome core + flex (7)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_all_loss_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("LOSS : Fluidité en fonction des compartiments pour le génome core + flex (7)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+
+
+
+ggplot(melt_core_gain_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("GAIN : Fluidité en fonction des compartiments pour le génome core (7)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_core_loss_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("LOSS : Fluidité en fonction des compartiments pour le génome core (7)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_flex_gain_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("GAIN : Fluidité en fonction des compartiments pour le génome flex (7)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_flex_loss_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("LOSS : Fluidité en fonction des compartiments pour le génome flex (7)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+```
+
+## <span style="color:blue"> VIOLIN Plots GAIN LOSS </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Supprimer les lignes contenant "comp" ou "Ambiguous" dans la colonne "compartiment"
+data_merge_spec2=subset(data_merge_spec, !grepl("comp|Ambiguous", compartiment) & grepl("",compartiment))
+
+# Pour gentype core + flex
+ggplot(data_merge_spec2, aes(x = compartiment, y = Gains, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("GAINS : Violin plot du nombre d'évènements par compartiments pour le génome CORE + FLEX (7)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+ggplot(data_merge_spec2, aes(x = compartiment, y = Losses, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("LOSSES : Violin plot du nombre d'évènements par compartiments pour le génome CORE + FLEX (7)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+
+# Filtrer les données pour le gentype "core"
+data_core=subset(data_merge_spec2, gentype == "core")
+
+ggplot(data_core, aes(x = compartiment, y = Gains, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("GAINS : Violin plot du nombre d'évènements par compartiments pour le génome CORE (7)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+ggplot(data_core, aes(x = compartiment, y = Losses, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("LOSSES : Violin plot du nombre d'évènements par compartiments pour le génome CORE (7)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+
+# Filtrer les données pour le gentype "flex"
+data_flex=subset(data_merge_spec2, gentype == "flex")
+
+ggplot(data_flex, aes(x = compartiment, y = Gains, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("GAINS : Violin plot du nombre d'évènements par compartiments pour le génome FLEX (7)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+ggplot(data_flex, aes(x = compartiment, y = Losses, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("LOSSES : Violin plot du nombre d'évènements par compartiments pour le génome FLEX (7)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+```
+
+# <span style="color:red"> Partie 3 : Phylogénie et fluidité des 7 génomes de références HLI et HLII + 18 SAGS </span>
+
+## <span style="color:blue"> Importation des données </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+HLI=c("MED4","MIT9515")
+HLII=c("P9312","MIT9215","AS9601","MIT9202","MIT9301")
+SAGs=c("496N4_C1","521B10_C1","498P15_C1","529C4_C1","495K23_C1","498B22_C2","498C16_C2","529D18_C3","496A2_C3","529J15_C3","518A17_C3","495L20_C3","528N17_C4","498I20_C5","498A3_C8","527L22_C8","520K10_C9","528J8_C9")
+All_data=c(HLI,HLII,SAGs)
+
+tree=read.tree("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/REROOT_RAxML_bestTree.ALL_concatenated_cogs.nwk")
+pa=read_rtab("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Matrice_fusionnee.tsv")
+
+tree = KeepTip(tree, All_data, preorder = TRUE)
+pa=pa[All_data,]
+```
+
+## <span style="color:blue"> Utilisation de panstripe </span>
+
+```{r, include = TRUE, message=FALSE}
+fit <- panstripe(pa, tree, family="quasipoisson")
+```
+
+## <span style="color:blue"> Plot du gain/perte </span>
+
+```{r, include = TRUE, message=FALSE}
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+data_x=gt$x
+data_y=gt$y
+data_labels=round(gt$trait)
+
+#Arbre gain/perte qui affiche les gains/pertes de gènes
+plot_gain_loss(fit,tip_label = FALSE)+geom_tiplab(align=TRUE,size=1.2,color="black")+ geom_text(aes(data_x,data_y),label=data_labels, check_overlap = FALSE, color="red", size=1.5,hjust=-0.3,vjust=-0.1)
+```
+
+## <span style="color:blue"> Annotations des COGS + importation données COUNT </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Annot_All_COGS.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/7_Genrefs_18_SAGS/COUNT_bash/family.txt", header=T, sep="\t", check.names = F)
+raw_data=raw_data[!(apply(raw_data[, 3:(ncol(raw_data)-4)], 1, function(x) all(x == 0))), ]
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+data_merge_spec=cbind(data_merge_spec,All_events=data_merge_spec$Gains+data_merge_spec$Losses)
+```
+
+## <span style="color:blue"> Fluidité des compartiments core + flex </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Calcul de la fluidité moyenne par compartiment génétique
+fluidite_par_compartiment <- tapply(data_merge_spec$All_events, data_merge_spec$compartiment, mean)
+
+nombre_COGS_par_compartiment <- tapply(data_merge_spec$COG, data_merge_spec$compartiment, length)
+
+# Créer un nouveau data frame avec les résultats
+COGS_fluidite_par_compartiment <- data.frame(compartiment = names(fluidite_par_compartiment),
+                                 fluidite = fluidite_par_compartiment,
+                                 nombre_COGS = nombre_COGS_par_compartiment)
+
+
+```
+
+## <span style="color:blue"> Différenciation core/flex </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+
+core=tapply(data_merge_spec$All_events[data_merge_spec$gentype == "core"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+               mean)
+
+# Calculer la moyenne par compartiment pour le type "flex"
+flex=tapply(data_merge_spec$All_events[data_merge_spec$gentype == "flex"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+               mean)
+
+# Compter le nombre de COGS par compartiment pour le type "core"
+nombre_COGS_core=tapply(data_merge_spec$COG[data_merge_spec$gentype == "core"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+                           length)
+
+# Compter le nombre de COGS par compartiment pour le type "flex"
+nombre_COGS_flex=tapply(data_merge_spec$COG[data_merge_spec$gentype == "flex"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+                           length)
+
+COGS_core <- data.frame(compartiment = names(core), fluidite = core, nombre_COGS = nombre_COGS_core)
+COGS_flex <- data.frame(compartiment = names(flex), fluidite = flex, nombre_COGS = nombre_COGS_flex)
+
+
+```
+
+## <span style="color:blue"> Résultats </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+#Rapport de fluidité par compartiments
+print(fluidite_par_compartiment)
+
+#Rapport de fluidité par compartiments core
+print(core)
+
+#Rapport de fluidité par compartiments flex
+print(flex)
+```
+
+
+## <span style="color:blue"> BAR Plots </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+melt_all=melt(fluidite_par_compartiment)
+melt_all_clean=cbind(melt_all,COGS=t(t(COGS_fluidite_par_compartiment[,3])))
+melt_all_clean=melt_all_clean[-c(1,3),]
+
+
+melt_core=melt(core)
+melt_core_clean=cbind(melt_core,COGS=t(t(COGS_core[,3])))
+
+
+melt_flex=melt(flex)
+melt_flex_clean=cbind(melt_flex,COGS=t(t(COGS_flex[,3])))
+melt_flex_clean=melt_flex_clean[-c(1),]
+
+ggplot(melt_all_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome core + flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_core_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome core") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_flex_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+```
+
+## <span style="color:blue"> VIOLIN Plots </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Supprimer les lignes contenant "comp" ou "Ambiguous" dans la colonne "compartiment"
+data_merge_spec2=subset(data_merge_spec, !grepl("comp|Ambiguous", compartiment) & grepl("",compartiment))
+
+# Pour gentype core + flex
+ggplot(data_merge_spec2, aes(x = compartiment, y = All_events, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("Violin plot du nombre d'évènements par compartiments pour le génome CORE + FLEX") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+
+# Filtrer les données pour le gentype "core"
+data_core=subset(data_merge_spec2, gentype == "core")
+
+ggplot(data_core, aes(x = compartiment, y = All_events, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("Violin plot du nombre d'évènements par compartiments pour le génome CORE") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+# Filtrer les données pour le gentype "flex"
+data_flex=subset(data_merge_spec2, gentype == "flex")
+
+ggplot(data_flex, aes(x = compartiment, y = All_events, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("Violin plot du nombre d'évènements par compartiments pour le génome FLEX") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+
+```
+
+## <span style="color:blue"> Fluidité des compartiments en gain vs pertes </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+
+fluidite_par_compartiment_gain=tapply(data_merge_spec$Gains, data_merge_spec$compartiment, mean)
+fluidite_par_compartiment_loss=tapply(data_merge_spec$Losses, data_merge_spec$compartiment, mean)
+
+nombre_COGS_par_compartiment_gain <- tapply(data_merge_spec$Gains, data_merge_spec$compartiment, length)
+nombre_COGS_par_compartiment_loss <- tapply(data_merge_spec$Losses, data_merge_spec$compartiment, length)
+
+COGS_fluidite_par_compartiment_gain <- data.frame(compartiment = names(fluidite_par_compartiment_gain),
+                                 fluidite = fluidite_par_compartiment_gain,
+                                 nombre_COGS = nombre_COGS_par_compartiment_gain)
+
+COGS_fluidite_par_compartiment_loss <- data.frame(compartiment = names(fluidite_par_compartiment_loss),
+                                 fluidite = fluidite_par_compartiment_loss,
+                                 nombre_COGS = nombre_COGS_par_compartiment_loss)
+
+
+
+
+
+core_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "core"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+               mean)
+core_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "core"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+               mean)
+
+
+
+flex_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "flex"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+               mean)
+flex_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "flex"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+               mean)
+
+
+nombre_COGS_core_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "core"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+                           length)
+nombre_COGS_core_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "core"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "core"],
+                           length)
+
+# Compter le nombre de COGS par compartiment pour le type "flex"
+nombre_COGS_flex_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "flex"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+                           length)
+nombre_COGS_flex_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "flex"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+                           length)
+
+
+
+COGS_core_gain <- data.frame(compartiment = names(core_gain), fluidite = core_gain, nombre_COGS = nombre_COGS_core_gain)
+COGS_core_loss <- data.frame(compartiment = names(core_loss), fluidite = core_loss, nombre_COGS = nombre_COGS_core_loss)
+
+COGS_flex_gain <- data.frame(compartiment = names(flex_gain), fluidite = flex_gain, nombre_COGS = nombre_COGS_flex_gain)
+COGS_flex_loss <- data.frame(compartiment = names(flex_loss), fluidite = flex_loss, nombre_COGS = nombre_COGS_flex_loss)
+
+```
+
+## <span style="color:blue"> BAR Plots GAIN LOSS </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+melt_all_gain=melt(fluidite_par_compartiment_gain)
+melt_all_gain_clean=cbind(melt_all_gain,COGS=t(t(COGS_fluidite_par_compartiment_gain[,3])))
+melt_all_gain_clean=melt_all_gain_clean[-c(1,3),]
+
+melt_all_loss=melt(fluidite_par_compartiment_loss)
+melt_all_loss_clean=cbind(melt_all_loss,COGS=t(t(COGS_fluidite_par_compartiment_loss[,3])))
+melt_all_loss_clean=melt_all_loss_clean[-c(1,3),]
+
+
+
+melt_core_gain=melt(core_gain)
+melt_core_gain_clean=cbind(melt_core_gain,COGS=t(t(COGS_core_gain[,3])))
+
+melt_core_loss=melt(core_loss)
+melt_core_loss_clean=cbind(melt_core_loss,COGS=t(t(COGS_core_loss[,3])))
+
+
+melt_flex_gain=melt(flex_gain)
+melt_flex_gain_clean=cbind(melt_flex_gain,COGS=t(t(COGS_flex_gain[,3])))
+melt_flex_gain_clean=melt_flex_gain_clean[-c(1),]
+
+melt_flex_loss=melt(flex_loss)
+melt_flex_loss_clean=cbind(melt_flex_loss,COGS=t(t(COGS_flex_loss[,3])))
+melt_flex_loss_clean=melt_flex_loss_clean[-c(1),]
+
+ggplot(melt_all_gain_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("GAIN : Fluidité en fonction des compartiments pour le génome core + flex (25)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_all_loss_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("LOSS : Fluidité en fonction des compartiments pour le génome core + flex (25)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+
+
+
+ggplot(melt_core_gain_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("GAIN : Fluidité en fonction des compartiments pour le génome core (25)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_core_loss_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("LOSS : Fluidité en fonction des compartiments pour le génome core (25)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_flex_gain_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("GAIN : Fluidité en fonction des compartiments pour le génome flex (25)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_flex_loss_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("LOSS : Fluidité en fonction des compartiments pour le génome flex (25)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+```
+
+## <span style="color:blue"> VIOLIN Plots GAIN LOSS </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Supprimer les lignes contenant "comp" ou "Ambiguous" dans la colonne "compartiment"
+data_merge_spec2=subset(data_merge_spec, !grepl("comp|Ambiguous", compartiment) & grepl("",compartiment))
+
+# Pour gentype core + flex
+ggplot(data_merge_spec2, aes(x = compartiment, y = Gains, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("GAINS : Violin plot du nombre d'évènements par compartiments pour le génome CORE + FLEX (25)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+ggplot(data_merge_spec2, aes(x = compartiment, y = Losses, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("LOSSES : Violin plot du nombre d'évènements par compartiments pour le génome CORE + FLEX (25)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+
+# Filtrer les données pour le gentype "core"
+data_core=subset(data_merge_spec2, gentype == "core")
+
+ggplot(data_core, aes(x = compartiment, y = Gains, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("GAINS : Violin plot du nombre d'évènements par compartiments pour le génome CORE (25)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+ggplot(data_core, aes(x = compartiment, y = Losses, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("LOSSES : Violin plot du nombre d'évènements par compartiments pour le génome CORE (25)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+
+# Filtrer les données pour le gentype "flex"
+data_flex=subset(data_merge_spec2, gentype == "flex")
+
+ggplot(data_flex, aes(x = compartiment, y = Gains, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("GAINS : Violin plot du nombre d'évènements par compartiments pour le génome FLEX (25)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+ggplot(data_flex, aes(x = compartiment, y = Losses, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("LOSSES : Violin plot du nombre d'évènements par compartiments pour le génome FLEX (25)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+```
+
+
+# <span style="color:red"> Partie 4 : Etude de la fluidité (backbone vs ISL1/2/2.1 vs ISL3/5 vs ISL4) sur la complétion > 90% avec uniquement les COGS flex des genrefs </span>
+
+## <span style="color:blue"> Importation des données </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+tree <- read.tree("/home/maarque/Donnees_projet/Data/SAGs_reduits/SAGs_reduits_reroot.nwk")
+
+pa <- read_rtab("/home/maarque/Donnees_projet/Data/SAGs_reduits/matrix_SAGs_reduits.tab")
+
+fit <- panstripe(pa, tree, family="quasipoisson")
+```
+
+## <span style="color:blue"> Import de la matrice d'annotations </span>
+
+```{r, include = TRUE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/Data_GARDON/Annotation_COGs/All_COGS_max.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Data_count/Count_BASH/family.txt", header=T, sep="\t", check.names = F)
+raw_data=raw_data[!(apply(raw_data[, 3:(ncol(raw_data)-4)], 1, function(x) all(x == 0))), ]
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+data_merge_spec=cbind(data_merge_spec,All_events=data_merge_spec$Gains+data_merge_spec$Losses)
+data_merge_spec=subset(data_merge_spec, grepl("flex", gentype) & (grepl("shared w/ MIT9312", shared) | grepl("shared w/ HLII", shared)))
+```
+
+## <span style="color:blue"> Récupération des données flex </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Calculer la moyenne par compartiment pour le type "flex"
+flex=tapply(data_merge_spec$All_events[data_merge_spec$gentype == "flex"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+               mean)
+
+
+# Compter le nombre de COGS par compartiment pour le type "flex"
+nombre_COGS_flex=tapply(data_merge_spec$COG[data_merge_spec$gentype == "flex"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+                           length)
+
+COGS_flex <- data.frame(compartiment = names(flex), fluidite = flex, nombre_COGS = nombre_COGS_flex)
+```
+
+## <span style="color:blue"> Résultats </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+print(flex)
+```
+
+
+## <span style="color:blue"> BAR Plots </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+melt_flex=melt(flex)
+melt_flex_clean=cbind(melt_flex,COGS=t(t(COGS_flex[,3])))
+melt_flex_clean=melt_flex_clean[-c(1),]
+
+ggplot(melt_flex_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+```
+
+
+## <span style="color:blue"> VIOLIN Plots </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Filtrer les données pour le gentype "flex"
+data_flex=subset(data_merge_spec2, gentype == "flex")
+
+ggplot(data_flex, aes(x = compartiment, y = All_events, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("Violin plot du nombre d'évènements par compartiments pour le génome FLEX") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+```
+
+## <span style="color:blue"> Fluidité des compartiments en gain vs pertes </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+flex_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "flex"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+               mean)
+flex_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "flex"],
+               data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+               mean)
+
+# Compter le nombre de COGS par compartiment pour le type "flex"
+nombre_COGS_flex_gain=tapply(data_merge_spec$Gains[data_merge_spec$gentype == "flex"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+                           length)
+nombre_COGS_flex_loss=tapply(data_merge_spec$Losses[data_merge_spec$gentype == "flex"],
+                           data_merge_spec$compartiment[data_merge_spec$gentype == "flex"],
+                           length)
+
+COGS_flex_gain <- data.frame(compartiment = names(flex_gain), fluidite = flex_gain, nombre_COGS = nombre_COGS_flex_gain)
+COGS_flex_loss <- data.frame(compartiment = names(flex_loss), fluidite = flex_loss, nombre_COGS = nombre_COGS_flex_loss)
+
+```
+
+## <span style="color:blue"> BAR Plots GAIN LOSS </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+melt_flex_gain=melt(flex_gain)
+melt_flex_gain_clean=cbind(melt_flex_gain,COGS=t(t(COGS_flex_gain[,3])))
+melt_flex_gain_clean=melt_flex_gain_clean[-c(1),]
+
+melt_flex_loss=melt(flex_loss)
+melt_flex_loss_clean=cbind(melt_flex_loss,COGS=t(t(COGS_flex_loss[,3])))
+melt_flex_loss_clean=melt_flex_loss_clean[-c(1),]
+
+ggplot(melt_flex_gain_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("GAIN : Fluidité en fonction des compartiments pour le génome flex (18)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+
+ggplot(melt_flex_loss_clean, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("LOSS : Fluidité en fonction des compartiments pour le génome flex (18)") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_label(aes(label = COGS), y=-0.10, color="white" , size = 3) +
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,4.3) + 
+  guides(fill = guide_legend(override.aes = list(label="")))
+```
+
+## <span style="color:blue"> VIOLIN Plots GAIN LOSS </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+data_merge_spec2=subset(data_merge_spec, !grepl("comp|Ambiguous", compartiment) & grepl("",compartiment))
+# Filtrer les données pour le gentype "flex"
+data_flex=subset(data_merge_spec2, gentype == "flex")
+
+ggplot(data_flex, aes(x = compartiment, y = Gains, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("GAINS : Violin plot du nombre d'évènements par compartiments pour le génome FLEX (18)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+
+ggplot(data_flex, aes(x = compartiment, y = Losses, fill = compartiment)) +
+  geom_violin() +
+  xlab("Compartiments") +
+  ylab("Nombre d'évènements") +
+  ggtitle("LOSSES : Violin plot du nombre d'évènements par compartiments pour le génome FLEX (18)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), plot.title = element_text(hjust = 0.5, margin = margin(b = 40), size=9))+
+  ylim(0,8)
+```

@@ -1,0 +1,337 @@
+---
+title: "14_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-14"
+output: html_document
+---
+
+```{r, eval=TRUE, message=FALSE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+library(phytools)
+library(rpart)
+library(tidyr)
+library(tibble)
+library(dplyr)
+library(plyr)
+set.seed(1234)
+```
+
+# <span style="color:red"> Partie 1 : Tableaux par clades du nombre de cores et flex par régions : SAGS > 90 % complétion </span>
+
+## <span style="color:blue"> Importation du jeu de données et utilisation de panstripe </span>
+
+```{r, eval=TRUE, warning=FALSE, message=FALSE, error=FALSE}
+tree <- read.tree("/home/maarque/Donnees_projet/Data/SAGs_reduits/SAGs_reduits_reroot.nwk")
+pa <- read_rtab("/home/maarque/Donnees_projet/Data/SAGs_reduits/matrix_SAGs_reduits.tab")
+
+fit <- panstripe(pa, tree, family="quasipoisson")
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+```
+
+## <span style="color:blue"> Import de la matrice d’états ancestraux et annotations </span>
+
+```{r, eval=TRUE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/Data_GARDON/Annotation_COGs/All_COGS_max.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Data_count/Count_BASH/family.txt", header=T, sep="\t", check.names = F)
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+```
+
+```{r, eval=TRUE}
+pa <- pa[match(tree$tip.label, rownames(pa)), , drop = FALSE]
+index <- which(apply(pa, 2, function(x) length(unique(x))) > 1)
+anc_states <- do.call(cbind, purrr::map(index, ~{
+            (panstripe:::asr_max_parsimony(tree, pa[, .x] + 
+                1, Nstates = 2)$change[tree$edge[, 2]])}))
+
+gt$label[20:37]=c("root",rep(1:17))
+```
+
+```{r, eval=TRUE}
+SommeRow=rowSums(anc_states)
+gt2=gt[,c(4,10)]
+gt2=gt2[-20,]
+
+new_row_names = character(nrow(anc_states))
+
+for (i in 1:nrow(gt2)) {
+  label = gt2[i, "label"]
+  chiffre = gt2[i, "trait"]
+  for (j in 1:nrow(anc_states)) {
+    if (sum(anc_states[j, ]) == chiffre) {
+      new_row_names[j] = label
+    }
+  }
+}
+
+rownames(anc_states) = new_row_names
+```
+
+```{r, eval=TRUE}
+variables_COGS <- list()
+
+for (i in 1:nrow(anc_states)) {
+  for (j in 1:ncol(anc_states)) {
+    valeur = anc_states[i, j]
+    if (valeur >= 0.5) {
+      SAG=colnames(anc_states)[j]
+      COG=rownames(anc_states)[i]
+      if (!(COG %in% names(variables_COGS))) {
+        variables_COGS[[COG]] = c()
+      }
+      variables_COGS[[COG]] = c(variables_COGS[[COG]], SAG)
+    }
+  }
+}
+```
+
+## <span style="color:blue"> Fonctions pour attribution des évènements de COGS en fonction des clades </span>
+
+```{r, eval=TRUE}
+find_names_ending_with=function(variables_COGS, suffix) {
+  names_ending_with=c()
+  for (name in names(variables_COGS)) {
+    if (endsWith(name, suffix)) {
+      names_ending_with=c(names_ending_with, name)
+    }
+  }
+  return(names_ending_with)
+}
+
+
+create_COGs=function(vector, variables_COGS) {
+  COGs=c()
+
+  for (term in vector) {
+    COGs=c(COGs, variables_COGS[[term]])
+  }
+
+  return(COGs)
+}
+```
+
+## <span style="color:blue"> Fonctions pour attribution des évènements de COGS en fonction des clades </span>
+
+```{r, eval=TRUE}
+#C1
+C1=find_names_ending_with(variables_COGS,"_C1")
+COGS_C1=unique(create_COGs(C1,variables_COGS))
+COGS_C1=merge(data.frame(COG=COGS_C1),data_merge_spec, by="COG")
+
+#C2
+C2=find_names_ending_with(variables_COGS,"_C2")
+COGS_C2=unique(create_COGs(C2,variables_COGS))
+COGS_C2=merge(data.frame(COG=COGS_C2),data_merge_spec, by="COG")
+
+#C3
+C3=find_names_ending_with(variables_COGS,"_C3")
+COGS_C3=unique(create_COGs(C3,variables_COGS))
+COGS_C3=merge(data.frame(COG=COGS_C3),data_merge_spec, by="COG")
+
+#C4
+C4=find_names_ending_with(variables_COGS,"_C4")
+COGS_C4=unique(create_COGs(C4,variables_COGS))
+COGS_C4=merge(data.frame(COG=COGS_C4),data_merge_spec, by="COG")
+
+#C5
+C5=find_names_ending_with(variables_COGS,"_C5")
+COGS_C5=unique(create_COGs(C5,variables_COGS))
+COGS_C5=merge(data.frame(COG=COGS_C5),data_merge_spec, by="COG")
+
+#C8
+C8=find_names_ending_with(variables_COGS,"_C8")
+COGS_C8=unique(create_COGs(C8,variables_COGS))
+COGS_C8=merge(data.frame(COG=COGS_C8),data_merge_spec, by="COG")
+
+#C9
+C9=find_names_ending_with(variables_COGS,"_C9")
+COGS_C9=unique(create_COGs(C9,variables_COGS))
+COGS_C9=merge(data.frame(COG=COGS_C9),data_merge_spec, by="COG")
+```
+
+```{r, eval=TRUE}
+generate_C_all <- function(data) {
+  C_core <- as.data.frame(table(data$compartiment[data$gentype == "core"]))
+  C_flex <- as.data.frame(table(data$compartiment[data$gentype == "flex"]))
+  C_multi <- as.data.frame(table(data$compartiment[data$gentype == "multi"]))
+  C_all <- merge(C_core, C_flex, by = "Var1", all = TRUE)
+  C_all <- merge(C_all, C_multi, by = "Var1", all = TRUE)
+  rownames(C_all) <- C_all[, 1]
+  C_all <- C_all[, c(2, 3, 4)]
+  colnames(C_all) <- c("core", "flex", "multi")
+  C_all[is.na(C_all)] <- 0
+  
+  return(C_all)
+}
+
+```
+
+```{r, eval=TRUE}
+C1_all=generate_C_all(COGS_C1)
+C2_all=generate_C_all(COGS_C2)
+C3_all=generate_C_all(COGS_C3)
+C4_all=generate_C_all(COGS_C4)
+C5_all=generate_C_all(COGS_C5)
+C8_all=generate_C_all(COGS_C8)
+C9_all=generate_C_all(COGS_C9)
+```
+
+
+# <span style="color:red"> Partie 2 : Tableaux par clades du nombre de cores et flex par régions : SAGS > 70 % complétion </span>
+
+## <span style="color:blue"> Importation du jeu de données et utilisation de panstripe </span>
+
+
+```{r, eval=TRUE, message=FALSE}
+tree <- read.tree("/home/maarque/Donnees_projet/Data/SAGs_Compl70/Arbre_reroot_60SAGs.txt")
+pa <- read_rtab("/home/maarque/Donnees_projet/Data/SAGs_Compl70/table_SAGs.tab")
+fit <- panstripe(pa, tree, family="quasipoisson")
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+
+```
+
+## <span style="color:blue"> Import de la matrice d’états ancestraux et annotations </span>
+
+```{r, eval=TRUE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/Data_GARDON/Annotation_COGs/All_COGS_max.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Data_count/Count_BASH/family.txt", header=T, sep="\t", check.names = F)
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+
+pa <- pa[match(tree$tip.label, rownames(pa)), , drop = FALSE]
+index <- which(apply(pa, 2, function(x) length(unique(x))) > 1)
+anc_states <- do.call(cbind, purrr::map(index, ~{
+            (panstripe:::asr_max_parsimony(tree, pa[, .x] + 
+                1, Nstates = 2)$change[tree$edge[, 2]])}))
+gt$label[61:119]=c("root",rep(1:58))
+
+SommeRow=rowSums(anc_states)
+gt2=gt[,c(4,10)]
+gt2=gt2[-61,]
+
+new_row_names = character(nrow(anc_states))
+
+for (i in 1:nrow(gt2)) {
+  label = gt2[i, "label"]
+  chiffre = gt2[i, "trait"]
+  for (j in 1:nrow(anc_states)) {
+    if (sum(anc_states[j, ]) == chiffre) {
+      new_row_names[j] = label
+    }
+  }
+}
+
+rownames(anc_states) = new_row_names
+
+```
+
+## <span style="color:blue"> Attribution des évènements de COGS en fonction des clades </span>
+
+```{r, eval=TRUE}
+variables_COGS <- list()
+
+for (i in 1:nrow(anc_states)) {
+  for (j in 1:ncol(anc_states)) {
+    valeur = anc_states[i, j]
+    if (valeur >= 0.5) {
+      SAG=colnames(anc_states)[j]
+      COG=rownames(anc_states)[i]
+      if (!(COG %in% names(variables_COGS))) {
+        variables_COGS[[COG]] = c()
+      }
+      variables_COGS[[COG]] = c(variables_COGS[[COG]], SAG)
+    }
+  }
+}
+```
+
+
+```{r, eval=TRUE}
+C1=find_names_ending_with(variables_COGS,"_C1")
+COGS_C1=unique(create_COGs(C1,variables_COGS))
+COGS_C1=merge(data.frame(COG=COGS_C1),data_merge_spec, by="COG")
+
+#C2
+C2=find_names_ending_with(variables_COGS,"_C2")
+COGS_C2=unique(create_COGs(C2,variables_COGS))
+COGS_C2=merge(data.frame(COG=COGS_C2),data_merge_spec, by="COG")
+
+#C3
+C3=find_names_ending_with(variables_COGS,"_C3")
+COGS_C3=unique(create_COGs(C3,variables_COGS))
+COGS_C3=merge(data.frame(COG=COGS_C3),data_merge_spec, by="COG")
+
+#C4
+C4=find_names_ending_with(variables_COGS,"_C4")
+COGS_C4=unique(create_COGs(C4,variables_COGS))
+COGS_C4=merge(data.frame(COG=COGS_C4),data_merge_spec, by="COG")
+
+#C5
+C5=find_names_ending_with(variables_COGS,"_C5")
+COGS_C5=unique(create_COGs(C5,variables_COGS))
+COGS_C5=merge(data.frame(COG=COGS_C5),data_merge_spec, by="COG")
+
+#C8
+C8=find_names_ending_with(variables_COGS,"_C8")
+COGS_C8=unique(create_COGs(C8,variables_COGS))
+COGS_C8=merge(data.frame(COG=COGS_C8),data_merge_spec, by="COG")
+
+#C9
+C9=find_names_ending_with(variables_COGS,"_C9")
+COGS_C9=unique(create_COGs(C9,variables_COGS))
+COGS_C9=merge(data.frame(COG=COGS_C9),data_merge_spec, by="COG")
+```
+
+```{r, eval=TRUE}
+C1_all_70=generate_C_all(COGS_C1)
+C2_all_70=generate_C_all(COGS_C2)
+C3_all_70=generate_C_all(COGS_C3)
+C4_all_70=generate_C_all(COGS_C4)
+C5_all_70=generate_C_all(COGS_C5)
+C8_all_70=generate_C_all(COGS_C8)
+C9_all_70=generate_C_all(COGS_C9)
+```
+
+```{r, eval=TRUE}
+# On a ici le nombre de COGS ayant subis des évènements (core flex et multi) en fonction des compartiments pour les SAGS avec complétion > 90 %
+
+# 90 %
+print(t(C1_all[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+print(t(C2_all[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+print(t(C3_all[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+print(t(C4_all[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+print(t(C5_all[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+print(t(C8_all[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+print(t(C9_all[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+
+# 70 % 
+print(t(C1_all_70[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+print(t(C2_all_70[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+print(t(C3_all_70[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+print(t(C4_all_70[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+print(t(C5_all_70[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+print(t(C8_all_70[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+print(t(C9_all_70[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5","Ambiguous","comp"),]))
+```
+
+
+

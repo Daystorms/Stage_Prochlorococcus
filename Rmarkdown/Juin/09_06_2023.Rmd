@@ -1,0 +1,45 @@
+---
+title: "09_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-09"
+output: html_document
+---
+
+# <span style="color:red"> Suite du 08_06_2023 </span>
+
+## <span style="color:blue"> Regrouper les COGS ensembles  </span>
+
+```{r, engine='bash', eval=FALSE}
+for dir in */ ; do cd $dir ; cat *.txt | grep -v '^$' | sed -r 's/[0-9]+ //' | fold -w 80 -s > "All_COGS$(basename "$(pwd)").txt" ; cd .. ; done
+```
+
+## <span style="color:blue"> Construction du HMM à partir des COGS de SAGS alignés  </span>
+
+```{r, engine='bash', eval=FALSE}
+files=$(find /databis/gardon/PROCHLOROCOCCUS/phylogeny-core-genes/ -name "og*.fna.aligned.fasta*")
+
+for file in $files ; do number=$(echo "$file" | cut -d'/' -f6) ; if [ ! -d "$number" ]; then mkdir "$number"; fi ; output="$number/HMM_COG_$number" ; hmmbuild "$output" "$file"; [ ! -s "$output" ] && rm "$output"; done
+```
+
+## <span style="color:blue"> Utilisation du HMM pour aligner les séquences des nouveaux génomes  </span>
+
+```{r, engine='bash', eval=FALSE}
+# Pour file plutôt chercher HMM
+files=$(find -name "HMM_*")
+for file in $files ; do name=$(echo $file | cut -d "/" -f2)  ; cd $name ; hmmalign HMM_COG* All_COGS* > phylip$name ; seqret phylip$name Alignement_$name.fasta ; cd .. ; done
+
+for file in $files ; do name=$(echo $file | cut -d "/" -f2) ; cd $name ; if ls All_COGS* 1> /dev/null 2>&1; then hmmalign --outformat phylip HMM_COG* All_COGS* > phylip$name ; seqret phylip$name Alignement_$name.fasta ; fi ; cd .. ; done
+
+```
+
+```{r, engine='bash', eval=FALSE}
+Hélène : 1204 COGS
+Moi : 2396 COGS dont 1103 qui correspondent
+
+Soit une différence de 101
+
+```
+
+
+
+

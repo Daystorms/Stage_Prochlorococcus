@@ -1,0 +1,152 @@
+---
+title: "08_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-08"
+output: html_document
+---
+
+# <span style="color:red"> Exemple de commandes pour une analyse entière </span>
+
+## <span style="color:blue"> Création DATABASE  </span>
+
+```{r, engine='bash', eval=FALSE}
+mmseqs createdb "XXX" target_db
+# --search-type 3 pour NT et 2 pour PROT
+mmseqs createindex target_db tmp --search-type 3
+```
+
+## <span style="color:blue"> Parcourir les files pour trouver les COGS avec easy-search  </span>
+
+```{r, engine='bash', eval=FALSE}
+files=$(find -name "cds_from*")
+
+for file in $files ; do name=$(echo "$file" | awk -F'/' '{print $3}') ; mmseqs easy-search "$file" target_db "result_${name}" tmp --format-output "query,target,evalue,qcov,tcov,pident,qlen,tlen,alnlen" ; done
+```
+
+## <span style="color:blue"> Trier selon les caractères de sélection  </span>
+
+#### e-value : 1e-5 (col 3)
+#### identity : 0.8 (col 6)
+#### length : 0.75 (ratio)
+
+```{r, engine='bash', eval=FALSE}
+for file in result_GCF_*.1; do output_file="CDS_COGS/COGS_$(basename "$file" | cut -d'.' -f1).txt"; awk '{OFS="\t"} { if ($3<1e-5 && $6>0.8) { ratio = ($7 <= $8) ? $9/$7 : $9/$8; if (ratio > 0.75) { print $1,$2,$3,$6,ratio }}}' "$file" | cut -d "|" -f1 | sort -k1 | uniq -c | awk '{count[$2]++; if (count[$2] > maxCount[$2]) {maxCount[$2] = count[$2]; maxValue[$2] = $3}} END {for (key in maxCount) print key, maxValue[key]}' > "$output_file"; done
+```
+
+## <span style="color:blue"> Création d'un fichier ouput "Data_overview" qui contient un résumé des résultats  </span>
+
+```{r, engine='bash', eval=FALSE}
+for file in COGS_result_*; do count=$(wc -l < "$file"); base=$(basename "$file" .txt); echo -e "$count\t$file\tGCF_$(echo "$base" | awk -F '_' '{print $4}')"; done | sort -k1 -n -r > Overview
+
+join -1 3 -2 1 -t $'\t' <(sort -k3 Overview) <(sort -k1 Correspondance_RefSeq_Strain) | sort -k2 -n -r | awk '{OFS="\t"} {print $2,$4,$1,$3}'> Data_overview
+```
+
+
+
+
+
+
+
+
+# <span style="color:red"> Utilisation sur des séquences protéiques </span>
+
+## <span style="color:blue"> Création DATABASE  </span>
+
+#### Se placer dans le Genomes_refs
+
+```{r, engine='bash', eval=FALSE}
+mmseqs createdb all-pop.fa target_db
+# --search-type 3 pour NT et 2 pour PROT
+mmseqs createindex target_db tmp --search-type 2
+```
+
+## <span style="color:blue"> Parcourir les files pour trouver les COGS avec easy-search  </span>
+
+```{r, engine='bash', eval=FALSE}
+files=$(find -name "protein.faa*")
+
+for file in $files ; do name=$(echo "$file" | awk -F'/' '{print $3}') ; mmseqs easy-search "$file" target_db "result_${name}" tmp --format-output "query,target,evalue,qcov,tcov,pident,qlen,tlen,alnlen" ; done
+```
+
+## <span style="color:blue"> Trier selon les caractères de sélection  </span>
+
+#### e-value : 1e-5 (col 3)
+#### identity : **0.3** (col 6)
+#### length : 0.75 (ratio)
+
+```{r, engine='bash', eval=FALSE}
+for file in result_GCF_*.1; do output_file="CDS_COGS/COGS_$(basename "$file" | cut -d'.' -f1).txt"; awk '{OFS="\t"} { if ($3<1e-5 && $6>0.3) { ratio = ($7 <= $8) ? $9/$7 : $9/$8; if (ratio > 0.75) { print $1,$2,$3,$6,ratio }}}' "$file" | cut -d "|" -f1 | sort -k1 | uniq -c | awk '{count[$2]++; if (count[$2] > maxCount[$2]) {maxCount[$2] = count[$2]; maxValue[$2] = $3}} END {for (key in maxCount) print key, maxValue[key]}' > "$output_file"; done
+```
+
+## <span style="color:blue"> Création d'un fichier ouput "Data_overview" qui contient un résumé des résultats  </span>
+
+#### Se placer dans CDS_COGS
+
+```{r, engine='bash', eval=FALSE}
+for file in COGS_result_*; do count=$(wc -l < "$file"); base=$(basename "$file" .txt); echo -e "$count\t$file\tGCF_$(echo "$base" | awk -F '_' '{print $4}')"; done | sort -k1 -n -r > Overview
+
+join -1 3 -2 1 -t $'\t' <(sort -k3 Overview) <(sort -k1 Correspondance_RefSeq_Strain) | sort -k2 -n -r | awk '{OFS="\t"} {print $2,$4,$1,$3}'> Data_overview
+```
+
+
+## <span style="color:blue"> Résultats  </span>
+
+```{r, engine='bash', eval=FALSE}
+1804	MED4	GCF_000011465	COGS_result_GCF_000011465.txt
+1803	MIT9215	GCF_000018065	COGS_result_GCF_000018065.txt
+1782	MIT9301	GCF_000015965	COGS_result_GCF_000015965.txt
+1779	AS9601	GCF_000015645	COGS_result_GCF_000015645.txt
+1779	MIT9312	GCF_000012645	COGS_result_GCF_000012645.txt
+1759	MIT9202	GCF_000158595	COGS_result_GCF_000158595.txt
+1732	MIT9515	GCF_000015665	COGS_result_GCF_000015665.txt
+1690	MIT1013	GCF_027359395	COGS_result_GCF_027359395.txt
+1620	MIT1214	GCF_027359355	COGS_result_GCF_027359355.txt
+1617	MIT0917	GCF_027359575	COGS_result_GCF_027359575.txt
+1605	NATL1A	GCF_000015685	COGS_result_GCF_000015685.txt
+1603	MIT0912	GCF_027359595	COGS_result_GCF_027359595.txt
+1598	MIT0913	GCF_027359525	COGS_result_GCF_027359525.txt
+1590	MIT0915	GCF_027359475	COGS_result_GCF_027359475.txt
+1590	NATL2A	GCF_000012465	COGS_result_GCF_000012465.txt
+1516	MIT0918	GCF_027359415	COGS_result_GCF_027359415.txt
+1506	MIT9303	GCF_000015705	COGS_result_GCF_000015705.txt
+1500	SS120	GCF_000007925	COGS_result_GCF_000007925.txt
+1497	MIT0919	GCF_027359375	COGS_result_GCF_027359375.txt
+1471	MIT9211	GCF_000018585	COGS_result_GCF_000018585.txt
+1465	MIT9313	GCF_000011485	COGS_result_GCF_000011485.txt
+
+```
+
+# <span style="color:red"> Alignement des COGS </span>
+
+## <span style="color:blue"> Récupérer séquences des COGS  </span>
+
+```{r, engine='bash', eval=FALSE}
+
+# Exemple : python3 ScriptAA.py COGS_results cds.fna
+
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_027359575.txt ./data/GCF_027359575.1/cds_from_genomic.fna > COGS_NT/GCF_027359575
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000015685.txt ./data/GCF_000015685.1/cds_from_genomic.fna > COGS_NT/GCF_000015685
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_027359355.txt ./data/GCF_027359355.1/cds_from_genomic.fna > COGS_NT/GCF_027359355
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000015965.txt ./data/GCF_000015965.1/cds_from_genomic.fna > COGS_NT/GCF_000015965
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000012465.txt ./data/GCF_000012465.1/cds_from_genomic.fna > COGS_NT/GCF_000012465
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000018065.txt ./data/GCF_000018065.1/cds_from_genomic.fna > COGS_NT/GCF_000018065
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_027359525.txt ./data/GCF_027359525.1/cds_from_genomic.fna > COGS_NT/GCF_027359525
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_027359415.txt ./data/GCF_027359415.1/cds_from_genomic.fna > COGS_NT/GCF_027359415
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000015665.txt ./data/GCF_000015665.1/cds_from_genomic.fna > COGS_NT/GCF_000015665
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000015705.txt ./data/GCF_000015705.1/cds_from_genomic.fna > COGS_NT/GCF_000015705
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_027359475.txt ./data/GCF_027359475.1/cds_from_genomic.fna > COGS_NT/GCF_027359475
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000015645.txt ./data/GCF_000015645.1/cds_from_genomic.fna > COGS_NT/GCF_000015645
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000007925.txt ./data/GCF_000007925.1/cds_from_genomic.fna > COGS_NT/GCF_000007925
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000012645.txt ./data/GCF_000012645.1/cds_from_genomic.fna > COGS_NT/GCF_000012645
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_027359375.txt ./data/GCF_027359375.1/cds_from_genomic.fna > COGS_NT/GCF_027359375
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_027359395.txt ./data/GCF_027359395.1/cds_from_genomic.fna > COGS_NT/GCF_027359395
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000011485.txt ./data/GCF_000011485.1/cds_from_genomic.fna > COGS_NT/GCF_000011485
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_027359595.txt ./data/GCF_027359595.1/cds_from_genomic.fna > COGS_NT/GCF_027359595
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000018585.txt ./data/GCF_000018585.1/cds_from_genomic.fna > COGS_NT/GCF_000018585
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000011465.txt ./data/GCF_000011465.1/cds_from_genomic.fna > COGS_NT/GCF_000011465
+python3 ScriptAA.py ./CDS_COGS/COGS_result_GCF_000158595.txt ./data/GCF_000158595.1/cds_from_genomic.fna > COGS_NT/GCF_000158595
+```
+
+
+
+

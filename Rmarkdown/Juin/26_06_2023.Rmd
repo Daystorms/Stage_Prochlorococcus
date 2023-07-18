@@ -1,0 +1,471 @@
+---
+title: "26_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-26"
+output: html_document
+---
+
+```{r Packages, message=FALSE, warning=FALSE, include=TRUE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+library(phytools)
+library(rpart)
+library(tidyr)
+library(tibble)
+library(dplyr)
+library(reshape2)
+library(ggpmisc)
+set.seed(1234)
+```
+
+# <span style="color:red"> Partie 1 : Etude de la fluidité (backbone vs ISL1/2/2.1 vs ISL3/5 vs ISL4) sur tout le jeu de données </span>
+
+## <span style="color:blue"> Utilisation du jeu de données initial (car nouveaux COGS pas attribués à un compartiment) </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+tree <- read.tree("/home/maarque/Donnees_projet/Data/ALL_SAGS/Tree_all_sags_reroot.nwk")
+
+pa <- read_rtab("/home/maarque/Donnees_projet/Data/ALL_SAGS/matrice_binaire_equilibre.tab")
+
+fit <- panstripe(pa, tree, family="quasipoisson")
+```
+
+## <span style="color:blue"> Import de la matrice d'annotations </span>
+
+```{r, include = TRUE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/Data_GARDON/Annotation_COGs/All_COGS_max.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/ALL_SAGS/Data_count/Count_BASH/family.txt", header=T, sep="\t", check.names = F)
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+data_merge_spec=cbind(data_merge_spec,All_events=data_merge_spec$Gains+data_merge_spec$Losses)
+```
+
+## <span style="color:blue"> Fluidité des compartiments core + flex </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Calcul de la fluidité moyenne par compartiment génétique
+fluidite_par_compartiment <- tapply(data_merge_spec$All_events, data_merge_spec$compartiment, mean)
+compart_differencie=t(as.data.frame(fluidite_par_compartiment))
+
+# Regroupement par compartiments
+fluidite=as.data.frame(c(fluidite_par_compartiment[1],
+                         fluidite_par_compartiment[2],
+                         fluidite_par_compartiment[3],
+                         (fluidite_par_compartiment[4]+fluidite_par_compartiment[5])/2,
+                         (fluidite_par_compartiment[6]+fluidite_par_compartiment[8])/2,
+                         fluidite_par_compartiment[7]))
+fluidite=t(fluidite)
+rownames(fluidite)="Fluiditée"
+colnames(fluidite)=c("Ambiguous","Backbone","comp","ISL1_2","ISL3_5","ISL4")
+
+
+```
+
+## <span style="color:blue"> Différenciation core/flex </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+core=tapply(data_merge_spec$All_events[data_merge_spec$gentype=="core"], data_merge_spec$compartiment[data_merge_spec$gentype=="core"], mean)
+flex=tapply(data_merge_spec$All_events[data_merge_spec$gentype=="flex"], data_merge_spec$compartiment[data_merge_spec$gentype=="flex"], mean)
+```
+
+## <span style="color:blue"> Résultats </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+#Rapport de fluidité par compartiments
+print(fluidite_par_compartiment)
+
+#Rapport de fluidité par compartiments regroupés
+print(fluidite)
+
+#Rapport de fluidité par compartiments core
+print(core)
+
+#Rapport de fluidité par compartiments flex
+print(flex)
+```
+
+## <span style="color:blue"> Résultats remis au même niveau </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+normalize <- function(data) {
+  max_value <- max(data)
+  normalized_data <- data / max_value
+  return(normalized_data)
+}
+
+# Appliquer la normalisation à chaque table
+table1_normalized <- t(as.data.frame(lapply(as.data.frame(fluidite_par_compartiment), normalize)))
+colnames(table1_normalized)=c("Ambiguous","Backbone","comp","ISL1","ISL2","ISL3","ISL4","ISL5")
+rownames(table1_normalized)="fluidité"
+
+table2_normalized <- t(as.data.frame(lapply(as.data.frame(core), normalize)))
+colnames(table2_normalized)=c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5")
+
+table3_normalized <- t(as.data.frame(lapply(as.data.frame(flex), normalize)))
+colnames(table3_normalized)=c("Ambiguous","Backbone","ISL1","ISL2","ISL3","ISL4","ISL5")
+
+```
+
+## <span style="color:blue"> Plots </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+print(table1_normalized)
+print(table2_normalized)
+print(table3_normalized)
+
+df_melted=melt(table1_normalized)
+df_melted=df_melted[,c(2,3)]
+
+ggplot(df_melted, aes(x = Var2, y = value, fill= Var2)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome core + flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_y_continuous(limits = c(0, max(df_melted$value) * 1.2)) + 
+  geom_text(aes(label = round(value, 2)), vjust = -0.5) + labs(fill="Légende :")
+
+df_melted=melt(table2_normalized)
+df_melted=df_melted[,c(2,3)]
+
+ggplot(df_melted, aes(x = Var2, y = value, fill= Var2)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome core") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_y_continuous(limits = c(0, max(df_melted$value) * 1.2)) + 
+  geom_text(aes(label = round(value, 2)), vjust = -0.5) + labs(fill="Légende :")
+
+
+df_melted=melt(table3_normalized)
+df_melted=df_melted[,c(2,3)]
+
+ggplot(df_melted, aes(x = Var2, y = value, fill= Var2)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_y_continuous(limits = c(0, max(df_melted$value) * 1.2)) + 
+  geom_text(aes(label = round(value, 2)), vjust = -0.5) + labs(fill="Légende :")
+
+```
+
+
+# <span style="color:red"> Partie 2 : Etude de la fluidité (backbone vs ISL1/2/2.1 vs ISL3/5 vs ISL4) sur la complétion > 90% </span>
+
+## <span style="color:blue"> Importation des données </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+tree <- read.tree("/home/maarque/Donnees_projet/Data/SAGs_reduits/SAGs_reduits_reroot.nwk")
+
+pa <- read_rtab("/home/maarque/Donnees_projet/Data/SAGs_reduits/matrix_SAGs_reduits.tab")
+
+fit <- panstripe(pa, tree, family="quasipoisson")
+```
+
+## <span style="color:blue"> Import de la matrice d'annotations </span>
+
+```{r, include = TRUE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/Data_GARDON/Annotation_COGs/All_COGS_max.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Data_count/Count_BASH/family.txt", header=T, sep="\t", check.names = F)
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+data_merge_spec=cbind(data_merge_spec,All_events=data_merge_spec$Gains+data_merge_spec$Losses)
+```
+
+## <span style="color:blue"> Fluidité des compartiments core + flex </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Calcul de la fluidité moyenne par compartiment génétique
+fluidite_par_compartiment <- tapply(data_merge_spec$All_events, data_merge_spec$compartiment, mean)
+compart_differencie=t(as.data.frame(fluidite_par_compartiment))
+
+# Regroupement par compartiments
+fluidite=as.data.frame(c(fluidite_par_compartiment[1],
+                         fluidite_par_compartiment[2],
+                         fluidite_par_compartiment[3],
+                         (fluidite_par_compartiment[4]+fluidite_par_compartiment[5])/2,
+                         (fluidite_par_compartiment[6]+fluidite_par_compartiment[8])/2,
+                         fluidite_par_compartiment[7]))
+fluidite=t(fluidite)
+rownames(fluidite)="Fluiditée"
+colnames(fluidite)=c("Ambiguous","Backbone","comp","ISL1_2","ISL3_5","ISL4")
+
+
+```
+
+## <span style="color:blue"> Différenciation core/flex </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+core=tapply(data_merge_spec$All_events[data_merge_spec$gentype=="core"], data_merge_spec$compartiment[data_merge_spec$gentype=="core"], mean)
+flex=tapply(data_merge_spec$All_events[data_merge_spec$gentype=="flex"], data_merge_spec$compartiment[data_merge_spec$gentype=="flex"], mean)
+```
+
+## <span style="color:blue"> Résultats </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+#Rapport de fluidité par compartiments
+print(fluidite_par_compartiment)
+
+#Rapport de fluidité par compartiments regroupés
+print(fluidite)
+
+#Rapport de fluidité par compartiments core
+print(core)
+
+#Rapport de fluidité par compartiments flex
+print(flex)
+
+melt_all=melt(fluidite_par_compartiment)
+melt_core=melt(core)
+melt_flex=melt(flex)
+
+ggplot(melt_all, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome core + flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_text(aes(label = round(value, 2)), vjust = -0.5) + labs(fill="Légende :")
+
+ggplot(melt_core, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome core") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_text(aes(label = round(value, 2)), vjust = -0.5) + labs(fill="Légende :")
+
+ggplot(melt_flex, aes(x = Var1, y = value, fill= Var1)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_text(aes(label = round(value, 2)), vjust = -0.5) + labs(fill="Légende :")
+
+
+
+```
+
+## <span style="color:blue"> Résultats remis au même niveau </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+normalize <- function(data) {
+  max_value <- max(data)
+  normalized_data <- data / max_value
+  return(normalized_data)
+}
+
+# Appliquer la normalisation à chaque table
+table1_normalized <- t(as.data.frame(lapply(as.data.frame(fluidite_par_compartiment), normalize)))
+colnames(table1_normalized)=c("Ambiguous","Backbone","comp","ISL1","ISL2","ISL3","ISL4","ISL5")
+rownames(table1_normalized)="fluidité"
+
+table2_normalized <- t(as.data.frame(lapply(as.data.frame(core), normalize)))
+colnames(table2_normalized)=c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5")
+
+table3_normalized <- t(as.data.frame(lapply(as.data.frame(flex), normalize)))
+colnames(table3_normalized)=c("Ambiguous","Backbone","ISL1","ISL2","ISL3","ISL4","ISL5")
+
+```
+
+## <span style="color:blue"> Plots </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+print(table1_normalized)
+print(table2_normalized)
+print(table3_normalized)
+
+df_melted=melt(table1_normalized)
+df_melted=df_melted[,c(2,3)]
+
+ggplot(df_melted, aes(x = Var2, y = value, fill= Var2)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome core + flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_y_continuous(limits = c(0, max(df_melted$value) * 1.2)) + 
+  geom_text(aes(label = round(value, 2)), vjust = -0.5) + labs(fill="Légende :")
+
+df_melted=melt(table2_normalized)
+df_melted=df_melted[,c(2,3)]
+
+ggplot(df_melted, aes(x = Var2, y = value, fill= Var2)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome core") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_y_continuous(limits = c(0, max(df_melted$value) * 1.2)) + 
+  geom_text(aes(label = round(value, 2)), vjust = -0.5) + labs(fill="Légende :")
+
+df_melted=melt(table3_normalized)
+df_melted=df_melted[,c(2,3)]
+
+ggplot(df_melted, aes(x = Var2, y = value, fill= Var2)) +
+  geom_bar(stat = "identity") +
+  xlab("Compartiment") +
+  ylab("Fluidité") +
+  ggtitle("Fluidité en fonction des compartiments pour le génome flex") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) + 
+  scale_y_continuous(limits = c(0, max(df_melted$value) * 1.2)) + 
+  geom_text(aes(label = round(value, 2)), vjust = -0.5) + labs(fill="Légende :")
+
+```
+
+
+# <span style="color:red"> Partie 3 : Rapport COGS core vis-à-vis de la complétion </span>
+
+## <span style="color:blue"> Importation des données </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+tree <- read.tree("/home/maarque/Donnees_projet/Data/ALL_SAGS/Tree_all_sags_reroot.nwk")
+pa <- read_rtab("/home/maarque/Donnees_projet/Data/ALL_SAGS/matrice_binaire_equilibre.tab")
+
+fit <- panstripe(pa, tree, family="quasipoisson")
+
+tsv_completion=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Completion_SAGs.tsv", sep="\t", check.names = FALSE, header=FALSE)
+tsv_completion=tsv_completion[,c(1,4)]
+
+#J'enlève MIT9312
+tsv_completion=tsv_completion[-88,]
+```
+
+## <span style="color:blue"> Récupération des noms des COGS présents par SAGS </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+liste_SAG_COGs <- list()
+
+for (i in 1:nrow(pa)) {
+  SAG=rownames(pa)[i]
+  indices=which(pa[i, ] == 1)
+  COGs=colnames(pa)[indices]
+  liste_SAG_COGs[[SAG]]=COGs
+}
+
+# Supprimer le SAG "P9312" de la liste des COGs
+liste_SAG_COGs=subset(liste_SAG_COGs, !(names(liste_SAG_COGs) %in% "P9312"))
+
+```
+
+## <span style="color:blue"> Liste des COGS core </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+COG_core=data_compartiments$COG[data_compartiments$gentype=="core"]
+
+for (SAG in names(liste_SAG_COGs)) {
+  COGs=liste_SAG_COGs[[SAG]]
+  COGs=COGs[COGs %in% COG_core]
+  liste_SAG_COGs[[SAG]]=COGs
+}
+
+
+```
+
+## <span style="color:blue"> Création d'un df qui contient le nombre de COGS core par SAGS </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+# Obtenir le nombre de COGs pour chaque SAG
+nombre_COGs=sapply(liste_SAG_COGs, length)
+
+# Créer le dataframe avec le nom du SAG et le nombre de COGs
+df=data.frame(SAG = names(liste_SAG_COGs), Nombre_COGs = nombre_COGs, stringsAsFactors = FALSE)
+```
+
+## <span style="color:blue"> Fusion de df pour avoir le nombre de core en fonction de la complétion </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE}
+colnames(tsv_completion)=c("SAG","completion")
+merged_df=merge(df,tsv_completion, by="SAG")
+merged_df$completion=sub(",",".",merged_df$completion)
+merged_df$completion=as.double(merged_df$completion)
+```
+
+## <span style="color:blue"> Plot </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE, warning=FALSE}
+#En affichant le nom des points
+ggplot(merged_df, aes(x = completion, y = Nombre_COGs, label = SAG)) +
+  geom_point(size = 0.75) +
+  geom_text(size = 1, angle = 90, hjust = -0.5, vjust = 0, color = "blue") +
+  labs(x = "Complétion", y = "Nombre de COGs core") +
+  ggtitle("Nombre de COGS core en fonction de la complétion des SAGS") +
+  geom_smooth(method = "lm", se = FALSE, color="red", size=0.5) +
+  stat_poly_eq(formula = y ~ x, parse = TRUE, aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               label.x.npc = "right", label.y.npc = 0.15) +
+  stat_fit_glance(method = "lm", geom = "text", aes(label = paste("R2 = ", round(..r.squared.., digits = 3))),
+                  x.position = "right", y.position = "top")
+
+#Sans afficher le nom des points 
+ggplot(merged_df, aes(x = completion, y = Nombre_COGs, label = SAG, color = ifelse(merged_df$completion > 90, "Supérieur à 90%", 
+                                                                                   ifelse(merged_df$completion > 70, "Supérieur à 70%", "Inférieure à 70%")))) +
+  geom_point(size = 0.75) +
+  labs(x = "Complétion", y = "Nombre de COGs core") +
+  ggtitle("Nombre de COGS core en fonction de la complétion des SAGS") +
+  geom_smooth(method = "lm", se = FALSE, color = "red", size = 0.5) +
+  annotate("text", x = Inf, y = -Inf, label = paste("y = 45.4 + 12 x     R² =", round(summary(lm(Nombre_COGs ~ completion, data = merged_df))$r.squared, digits = 2)),
+           hjust = 1.3, vjust = -4, color = "black") +
+  scale_color_manual(values = c("Supérieur à 90%" = "blue", "Supérieur à 70%" = "green", "Inférieure à 70%" = "black"),
+                     name = "Complétion") +
+  theme(legend.position = "top")
+
+
+
+
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

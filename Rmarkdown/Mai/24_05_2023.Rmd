@@ -1,0 +1,109 @@
+---
+title: "24_05_2023"
+author: "ARQUE Maxime"
+date: "2023-05-24"
+output: html_document
+---
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+set.seed(1234)
+```
+
+# <span style="color:red"> Récupération des COGs présents dans chacun des SAGs </span>
+
+## <span style="color:blue"> Importation du jeu de données </span>
+```{r, include = TRUE, message=FALSE}
+data_matrice=read_rtab("/home/maarque/Donnees_projet/Data/SAGs_reduits/matrix_SAGs_reduits.tab")
+row.names(data_matrice)=sub(" ","_", row.names(data_matrice))
+data_matrice=t(data_matrice)
+```
+
+## <span style="color:blue"> Comptage des COGs par SAGs </span>
+```{r, include = TRUE, results='hide'}
+
+getSAGs = function(column) {
+  rownames(data_matrice)[which(column == 1)]
+}
+
+resultat = apply(data_matrice, MARGIN = 2, FUN = getSAGs)
+
+# Affichage des résultats
+for (i in 1:length(resultat)) {
+  cat(paste(colnames(data_matrice)[i])," : ", paste(resultat[[i]], collapse = ", "), "\n\n")
+}
+```
+# <span style="color:red"> Matrice de complétude pour ajout de complétion sur l'arbre reroot des 88 SAGs </span>
+
+## <span style="color:blue"> Création d'un DF qui contient pour chaque SAG sa complétude </span>
+
+```{r, include = TRUE}
+# J'ai manuellement créer un fichier .tsv qui contient les SAGs + la complétion
+data_completion=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Completion_SAGs.tsv", sep="\t", check.names = FALSE, header=FALSE)
+colnames(data_completion)=c("label","nom_MDA","sous_population","completion")
+```
+
+## <span style="color:blue"> Arbre des 88 SAGs reroot avec complétude </span>
+```{r, include = TRUE, message=FALSE, error=FALSE, warning=FALSE}
+phylo.file.name="/home/maarque/Donnees_projet/Data/ALL_SAGS/Tree_all_sags_reroot.nwk"
+rtab.file.name="/home/maarque/Donnees_projet/Data/ALL_SAGS/matrice_binaire_equilibre.tab"
+tree <- read.tree(phylo.file.name)
+pa <- read_rtab(rtab.file.name)
+
+fit <- panstripe(pa, tree, family="quasipoisson")
+
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+data_x=gt$x
+data_y=gt$y
+data_labels=round(gt$trait)
+
+#Merge des data frames pour créer gt2
+gt2=merge(gt,data_completion[,c(1,4)], by="label", all=TRUE)
+
+#Plot
+plot_gain_loss(fit,tip_label = FALSE)+geom_tiplab(align=TRUE,size=1.2,color="black")+ geom_text(aes(data_x,data_y),label=data_labels, check_overlap = FALSE, color="red", size=2,hjust=-0.5,vjust=-0.3)+geom_text(aes(gt2$x,gt2$y),label=gt2$completion, color="blue",size=1, x=0.138, nudge_y = 0.25)
+
+
+```
+
+
+# <span style="color:red"> Courbes d'accumulation de pangénomes </span>
+
+## <span style="color:blue"> Import des DATA pour accumulation curve</span>
+
+```{r, include = TRUE, message=FALSE}
+# Data 18 SAGs
+phylo.file.name="/home/maarque/Donnees_projet/Data/SAGs_reduits/SAGs_reduits_reroot.nwk"
+rtab.file.name="/home/maarque/Donnees_projet/Data/SAGs_reduits/matrix_SAGs_reduits.tab"
+tree2 <- read.tree(phylo.file.name)
+pa2 <- read_rtab(rtab.file.name)
+
+fit2 <- panstripe(pa2, tree2, family="quasipoisson")
+
+plot_acc(list(SAGs_reduit = fit2$pa, ALL_SAGs = fit$pa))
+
+plot_pangenome_params(list(SAGs_reduit = fit, ALL_SAGs = fit), legend = FALSE) + theme(axis.text.x = element_text(size=10, angle = 45, vjust = 1, hjust=1)) + plot_pangenome_cumulative(list(SAGs_reduit = fit, ALL_SAGs = fit)) + plot_layout(nrow = 1)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

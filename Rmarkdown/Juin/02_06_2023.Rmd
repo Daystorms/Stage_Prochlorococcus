@@ -1,0 +1,507 @@
+---
+title: "02_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-02"
+output: html_document
+---
+
+```{r Packages, message=FALSE, warning=FALSE, include=TRUE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+library(phytools)
+library(rpart)
+library(tidyr)
+library(tibble)
+library(dplyr)
+set.seed(1234)
+```
+
+# <span style="color:purple"> Etude sur nouveau jeu de donnée : 59 SAGs avec complétude supérieure à 70% </span>
+
+## <span style="color:red"> Partie 1 : Obtention du nouvel arbre et création de la nouvelle matrice de gain/perte de COGs </span>
+
+### <span style="color:blue"> Sélection des SAGs avec complétude > 70% </span>
+
+```{r, include = TRUE}
+
+tsv_completion=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Completion_SAGs.tsv", sep="\t", check.names = FALSE, header=FALSE)
+tsv_completion=tsv_completion[,c(1,4)]
+colnames(tsv_completion)=c("nom","completion")
+
+# > 70% de complétion
+Compl_70=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 70) {
+    Compl_70 = append(Compl_70, tsv_completion[i, 1])
+  }
+}
+rm(i)
+
+#Ajout de P9312 (génome de référence)
+
+Compl_70=append(Compl_70,"P9312")
+
+```
+
+### <span style="color:blue"> Extraction des branches des 59 SAGs dans l'arbre reroot </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE}
+#Importation des données
+
+tree <- read.tree("/home/maarque/Donnees_projet/Data/ALL_SAGS/Tree_all_sags_reroot.nwk")
+pa <- read_rtab("/home/maarque/Donnees_projet/Data/ALL_SAGS/matrice_binaire_equilibre.tab")
+
+#Extraction des TIPs
+tree = KeepTip(tree, Compl_70, preorder = TRUE)
+pa=pa[Compl_70,]
+
+#Export de l'arbre au format newick pour l'utiliser sur COUNT
+write.tree(tree, file='/home/maarque/Donnees_projet/Data/SAGs_Compl70/Arbre_reroot_60SAGs.txt')
+
+#Mise au bon format pour COUNT et export de la matrice
+matrice_count=t(pa)
+colnames(matrice_count)=sub("_"," ",colnames(matrice_count))
+
+#write.table(matrice_count, file="/home/maarque/Donnees_projet/Data/SAGs_Compl70/table_count.tab", row.names=TRUE, col.names=TRUE, sep="\t",quote = FALSE)
+
+#write.table(t(pa),file="/home/maarque/Donnees_projet/Data/SAGs_Compl70/table_SAGs.tab", row.names=TRUE, col.names=TRUE, sep="\t",quote = FALSE)
+```
+
+### <span style="color:blue"> Utilisation de PANSTRIPE sur le nouveau jeu de données </span>
+
+```{r, include = TRUE}
+fit <- panstripe(pa, tree, family="quasipoisson")
+```
+
+### <span style="color:blue"> Plot PANSTRIPE du nouvel arbre </span> 
+
+```{r, include = TRUE}
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+data_x=gt$x
+data_y=gt$y
+data_labels=round(gt$trait)
+
+tsv_completion=subset(tsv_completion, completion>70, select=c("nom","completion"))
+tsv_completion[nrow(tsv_completion)+1,]=c("P9312",100)
+
+
+#Merge des data frames pour créer gt2
+colnames(tsv_completion)[1]="label"
+gt2=merge(gt,tsv_completion, by="label", all=TRUE)
+
+#Plot
+plot_gain_loss(fit,tip_label = FALSE)+geom_tiplab(align=TRUE,size=1.2,color="black")+ geom_text(aes(data_x,data_y),label=data_labels, check_overlap = FALSE, color="red", size=2,hjust=-0.5,vjust=-0.3)+geom_text(aes(gt2$x,gt2$y),label=gt2$completion, color="blue",size=1, x=0.138, nudge_y = 0.25)
+```
+
+## <span style="color:red"> Partie 2 : Etude de la fluidité des îlots du nouveau jeu de données </span>
+
+### <span style="color:blue"> Import de la matrice d'états ancestraux et annotations</span> 
+
+```{r, include = TRUE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/Data_GARDON/Annotation_COGs/All_COGS_max.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/SAGs_Compl70/Data_COUNTbash/family.txt", header=T, sep="\t", check.names = F)
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+```
+
+
+```{r, include = TRUE}
+pa <- pa[match(tree$tip.label, rownames(pa)), , drop = FALSE]
+index <- which(apply(pa, 2, function(x) length(unique(x))) > 1)
+anc_states <- do.call(cbind, purrr::map(index, ~{
+            (panstripe:::asr_max_parsimony(tree, pa[, .x] + 
+                1, Nstates = 2)$change[tree$edge[, 2]])}))
+gt$label[61:119]=c("root",rep(1:58))
+```
+
+### <span style="color:blue"> Comme la matrice d'état ancestraux n'identifie pas le nom de branches, je dois les replacer manuellement </span> 
+
+```{r, include = TRUE}
+SommeRow=rowSums(anc_states)
+gt2=gt[,c(4,10)]
+gt2=gt2[-61,]
+
+new_row_names = character(nrow(anc_states))
+
+for (i in 1:nrow(gt2)) {
+  label = gt2[i, "label"]
+  chiffre = gt2[i, "trait"]
+  for (j in 1:nrow(anc_states)) {
+    if (sum(anc_states[j, ]) == chiffre) {
+      new_row_names[j] = label
+    }
+  }
+}
+
+rownames(anc_states) = new_row_names
+
+
+```
+
+### <span style="color:blue"> Attribution des évènements de COGS (>0.5 sur panstripe) en fonction des branches  </span> 
+
+```{r, include = TRUE}
+variables_COGS <- list()
+
+# Parcours de la matrice
+for (i in 1:nrow(anc_states)) {
+  for (j in 1:ncol(anc_states)) {
+    valeur = anc_states[i, j]
+    if (valeur >= 0.5) {
+      SAG <- colnames(anc_states)[j]
+      COG <- rownames(anc_states)[i]
+      
+      # Vérification si la variable COG existe déjà, sinon la créer
+      if (!(COG %in% names(variables_COGS))) {
+        variables_COGS[[COG]] = c()
+      }
+      
+      # Ajout du SAG à la variable COG
+      variables_COGS[[COG]] = c(variables_COGS[[COG]], SAG)
+    }
+  }
+}
+```
+
+### <span style="color:blue"> Fonctions pour attribution des évènements de COGS en fonction des clades  </span> 
+
+```{r, include = TRUE}
+find_names_ending_with=function(variables_COGS, suffix) {
+  names_ending_with=c()
+  for (name in names(variables_COGS)) {
+    if (endsWith(name, suffix)) {
+      names_ending_with <- c(names_ending_with, name)
+    }
+  }
+  return(names_ending_with)
+}
+
+
+create_COGs <- function(vector, variables_COGS) {
+  COGs <- c()
+
+  for (term in vector) {
+    COGs <- c(COGs, variables_COGS[[term]])
+  }
+
+  return(COGs)
+}
+
+```
+
+### <span style="color:blue"> Attribution des évènements de COGS en fonction des clades  </span> 
+
+```{r, include = TRUE}
+#C1
+C1=find_names_ending_with(variables_COGS,"_C1")
+COGS_C1=unique(create_COGs(C1,variables_COGS))
+COGS_C1=merge(data.frame(COG=COGS_C1),data_merge_spec, by="COG")
+
+#C2
+C2=find_names_ending_with(variables_COGS,"_C2")
+COGS_C2=unique(create_COGs(C2,variables_COGS))
+COGS_C2=merge(data.frame(COG=COGS_C2),data_merge_spec, by="COG")
+
+#C3
+C3=find_names_ending_with(variables_COGS,"_C3")
+COGS_C3=unique(create_COGs(C3,variables_COGS))
+COGS_C3=merge(data.frame(COG=COGS_C3),data_merge_spec, by="COG")
+
+#C4
+C4=find_names_ending_with(variables_COGS,"_C4")
+COGS_C4=unique(create_COGs(C4,variables_COGS))
+COGS_C4=merge(data.frame(COG=COGS_C4),data_merge_spec, by="COG")
+
+#C5
+C5=find_names_ending_with(variables_COGS,"_C5")
+COGS_C5=unique(create_COGs(C5,variables_COGS))
+COGS_C5=merge(data.frame(COG=COGS_C5),data_merge_spec, by="COG")
+
+#C8
+C8=find_names_ending_with(variables_COGS,"_C8")
+COGS_C8=unique(create_COGs(C8,variables_COGS))
+COGS_C8=merge(data.frame(COG=COGS_C8),data_merge_spec, by="COG")
+
+#C9
+C9=find_names_ending_with(variables_COGS,"_C9")
+COGS_C9=unique(create_COGs(C9,variables_COGS))
+COGS_C9=merge(data.frame(COG=COGS_C9),data_merge_spec, by="COG")
+
+```
+
+### <span style="color:blue"> Création des tables de comparaison  </span> 
+
+```{r, include = TRUE}
+TableCompart=as.data.frame(bind_rows(COGS_C9=table(COGS_C9$compartiment),COGS_C8=table(COGS_C8$compartiment),COGS_C5=table(COGS_C5$compartiment),COGS_C4=table(COGS_C4$compartiment),COGS_C3=table(COGS_C3$compartiment),COGS_C2=table(COGS_C2$compartiment),COGS_C1=table(COGS_C1$compartiment)))
+TableCompart[is.na(TableCompart)]=0
+rownames(TableCompart)=c("C9","C8","C5","C4","C3","C2","C1")
+
+TableGentype=as.data.frame(bind_rows(COGS_C9=table(COGS_C9$gentype),COGS_C8=table(COGS_C8$gentype),COGS_C5=table(COGS_C5$gentype),COGS_C4=table(COGS_C4$gentype),COGS_C3=table(COGS_C3$gentype),COGS_C2=table(COGS_C2$gentype),COGS_C1=table(COGS_C1$gentype)))
+rownames(TableGentype)=c("C9","C8","C5","C4","C3","C2","C1")
+
+print(TableCompart)
+print(TableGentype)
+
+```
+
+
+### <span style="color:blue"> Attribution de tous les COGs présents en fonction des clades </span>
+
+```{r, include = TRUE}
+liste_compartiments <- split(data_compartiments$COG, data_compartiments$compartiment)
+```
+
+### <span style="color:blue"> Attribution en fonction des différents clades </span>
+
+```{r, include = TRUE}
+Comparaison_compart=data.frame(TableCompart$Ambiguous/length(liste_compartiments$Ambiguous),
+                               TableCompart$Backbone/length(liste_compartiments$Backbone),
+                               TableCompart$comp/length(liste_compartiments$comp),
+                               TableCompart$ISL1/length(liste_compartiments$ISL1),
+                               TableCompart$ISL2/length(liste_compartiments$ISL2),
+                               TableCompart$ISL3/length(liste_compartiments$ISL3),
+                               TableCompart$ISL4/length(liste_compartiments$ISL4),
+                               TableCompart$ISL5/length(liste_compartiments$ISL5))
+
+Comparaison_compart=Comparaison_compart[,c(2,4,6,8,10,12,14,16)]
+rownames(Comparaison_compart)=c("C1","C2","C3","C4","C5","C8","C9")
+colnames(Comparaison_compart)=c("Ambiguous","Backbone","Comp","ISL1","ISL2","ISL3","ISL4","ISL5")
+Comparaison_compart=rbind(Comparaison_compart,All_Clades=colMeans(Comparaison_compart))
+
+print(Comparaison_compart)
+```
+### <span style="color:blue"> Plot de la fluidité des compartiments </span>
+
+```{r, include = TRUE}
+Fluid_Compart <- as.data.frame(Comparaison_compart) %>%
+  rownames_to_column(var = "Compartiment") %>%
+  gather(key = "Variable", value = "Valeur", -Compartiment)
+
+ggplot(Fluid_Compart, aes(x = Compartiment, y = Valeur, fill = Variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Clades", y = "Valeur", fill = "Variable") +
+  theme_minimal()
+
+ggplot(Fluid_Compart, aes(x = Compartiment, y = Valeur, fill = Variable, group=Compartiment)) +
+    geom_point(shape=21, size=3) + geom_line(aes(group=Variable, color=Variable)) +
+    labs(x = "Clades", y = "Valeur", color = "Variable") +
+    theme_minimal()
+
+```
+
+### <span style="color:blue"> Fluidité en fonction du type de génome </span>
+
+```{r, include = TRUE}
+liste_gentype <- split(data_compartiments$COG, data_compartiments$gentype)
+
+Comparaison_gentype=data.frame(TableGentype$core/length(liste_gentype$core),
+                               TableGentype$flex/length(liste_gentype$flex),
+                               TableGentype$multi/length(liste_gentype$multi))
+
+Comparaison_gentype=Comparaison_gentype[,c(2,4,6)]
+rownames(Comparaison_gentype)=c("C1","C2","C3","C4","C5","C8","C9")
+colnames(Comparaison_gentype)=c("core","flex","multi")
+
+Comparaison_gentype=rbind(Comparaison_gentype,All_Clades=colMeans(Comparaison_gentype))
+
+print(Comparaison_gentype)
+
+```
+
+## <span style="color:blue"> Plot fluidité en fonction du type de génome </span>
+
+```{r, include = TRUE}
+Fluid_Gentype <- as.data.frame(Comparaison_gentype) %>%
+  rownames_to_column(var = "Compartiment") %>%
+  gather(key = "Variable", value = "Valeur", -Compartiment)
+
+ggplot(Fluid_Gentype, aes(x = Compartiment, y = Valeur, fill = Variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Clades", y = "Valeur", fill = "Variable") +
+  theme_minimal()
+
+ggplot(Fluid_Gentype, aes(x = Compartiment, y = Valeur, fill = Variable, group=Compartiment)) +
+    geom_point(shape=21, size=3) + geom_line(aes(group=Variable, color=Variable)) +
+    labs(x = "Clades", y = "Valeur", color = "Variable") +
+    theme_minimal()
+
+```
+
+
+## <span style="color:red"> Partie 3 : Réduction du nombre de COGs par clades/compartiment à seulement ceux présents dans le clade </span>
+
+### <span style="color:blue"> A partir de la matrice PA, attribution des COGS en fonction des clades </span>
+
+```{r, include = TRUE}
+liste_sags <- list()
+
+# Parcours des lignes de la matrice
+for (i in 1:nrow(pa)) {
+  # Récupération des indices des colonnes contenant des 1
+  indices <- which(pa[i, ] == 1)
+  
+  # Récupération des noms des colonnes correspondantes
+  noms_colonnes <- colnames(pa)[indices]
+  noms_sags=rownames(pa)[i]
+  
+  # Ajout des noms des colonnes à la liste pour la SAG actuelle
+  liste_sags[[noms_sags]] <- noms_colonnes
+}
+
+C1_COGS=unique(create_COGs(C1,liste_sags))
+C1_COGS=merge(data.frame(COG=C1_COGS),data_merge_spec, by="COG")
+
+C2_COGS=unique(create_COGs(C2,liste_sags))
+C2_COGS=merge(data.frame(COG=C2_COGS),data_merge_spec, by="COG")
+
+C3_COGS=unique(create_COGs(C3,liste_sags))
+C3_COGS=merge(data.frame(COG=C3_COGS),data_merge_spec, by="COG")
+
+C4_COGS=unique(create_COGs(C4,liste_sags))
+C4_COGS=merge(data.frame(COG=C4_COGS),data_merge_spec, by="COG")
+
+C5_COGS=unique(create_COGs(C5,liste_sags))
+C5_COGS=merge(data.frame(COG=C5_COGS),data_merge_spec, by="COG")
+
+C8_COGS=unique(create_COGs(C8,liste_sags))
+C8_COGS=merge(data.frame(COG=C8_COGS),data_merge_spec, by="COG")
+
+C9_COGS=unique(create_COGs(C9,liste_sags))
+C9_COGS=merge(data.frame(COG=C9_COGS),data_merge_spec, by="COG")
+
+
+```
+
+
+```{r, include = TRUE}
+New_table_compart=as.data.frame(bind_rows(C9_COGS=table(C9_COGS$compartiment),C8_COGS=table(C8_COGS$compartiment),C5_COGS=table(C5_COGS$compartiment),C4_COGS=table(C4_COGS$compartiment),C3_COGS=table(C3_COGS$compartiment),C2_COGS=table(C2_COGS$compartiment),C1_COGS=table(C1_COGS$compartiment)))
+New_table_compart[is.na(New_table_compart)]=0
+rownames(New_table_compart)=c("C9","C8","C5","C4","C3","C2","C1")
+
+New_table_gentype=as.data.frame(bind_rows(C9_COGS=table(C9_COGS$gentype),C8_COGS=table(C8_COGS$gentype),C5_COGS=table(C5_COGS$gentype),C4_COGS=table(C4_COGS$gentype),C3_COGS=table(C3_COGS$gentype),C2_COGS=table(C2_COGS$gentype),C1_COGS=table(C1_COGS$gentype)))
+rownames(New_table_gentype)=c("C9","C8","C5","C4","C3","C2","C1")
+
+New_comparaison_gentype=TableGentype/New_table_gentype
+New_comparaison_gentype=New_comparaison_gentype[,c(2,4,6)]
+rownames(New_comparaison_gentype)=c("C9","C8","C5","C4","C3","C2","C1")
+colnames(New_comparaison_gentype)=c("core","flex","multi")
+New_comparaison_gentype=rbind(New_comparaison_gentype,All_Clades=colMeans(New_comparaison_gentype))
+
+New_comparaison_compart=TableCompart/New_table_compart
+New_comparaison_compart=New_comparaison_compart[,c(2,4,6,8,10,12,14,16)]
+rownames(New_comparaison_compart)=c("C9","C8","C5","C4","C3","C2","C1")
+colnames(New_comparaison_compart)=c("Ambiguous","Backbone","Comp","ISL1","ISL2","ISL3","ISL4","ISL5")
+New_comparaison_compart=rbind(New_comparaison_compart,All_Clades=colMeans(New_comparaison_compart))
+
+print(New_comparaison_gentype)
+print(New_comparaison_compart)
+
+
+```
+
+### <span style="color:blue"> Plots </span>
+
+```{r, include = TRUE}
+Fluid_Gentype <- as.data.frame(New_comparaison_gentype) %>%
+  rownames_to_column(var = "Compartiment") %>%
+  gather(key = "Variable", value = "Valeur", -Compartiment)
+
+ggplot(Fluid_Gentype, aes(x = Compartiment, y = Valeur, fill = Variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Clades", y = "Valeur", fill = "Variable") +
+  theme_minimal()
+
+ggplot(Fluid_Gentype, aes(x = Compartiment, y = Valeur, fill = Variable, group=Compartiment)) +
+    geom_point(shape=21, size=3) + geom_line(aes(group=Variable, color=Variable)) +
+    labs(x = "Clades", y = "Valeur", color = "Variable") +
+    theme_minimal()
+
+
+```
+
+```{r, include = TRUE}
+
+Fluid_Compart <- as.data.frame(New_comparaison_compart) %>%
+  rownames_to_column(var = "Compartiment") %>%
+  gather(key = "Variable", value = "Valeur", -Compartiment)
+
+ggplot(Fluid_Compart, aes(x = Compartiment, y = Valeur, fill = Variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Clades", y = "Valeur", fill = "Variable") +
+  theme_minimal()
+
+ggplot(Fluid_Compart, aes(x = Compartiment, y = Valeur, fill = Variable, group=Compartiment)) +
+    geom_point(shape=21, size=3) + geom_line(aes(group=Variable, color=Variable)) +
+    labs(x = "Clades", y = "Valeur", color = "Variable") +
+    theme_minimal()
+
+```
+## <span style="color:blue"> Table fluidité des compartiments des clades en gentype = core </span>
+
+```{r, include = TRUE}
+C9core=as.data.frame(bind_rows(table(C9_COGS$compartiment[C9_COGS$gentype=="core"]),table(COGS_C9$compartiment[COGS_C9$gentype=="core"])))
+C9core[is.na(C9core)]=0
+
+C8core=as.data.frame(bind_rows(table(C8_COGS$compartiment[C8_COGS$gentype=="core"]),table(COGS_C8$compartiment[COGS_C8$gentype=="core"])))
+C8core[is.na(C8core)]=0
+
+C5core=as.data.frame(bind_rows(table(C5_COGS$compartiment[C5_COGS$gentype=="core"]),table(COGS_C5$compartiment[COGS_C5$gentype=="core"])))
+C5core[is.na(C5core)]=0
+
+C4core=as.data.frame(bind_rows(table(C4_COGS$compartiment[C4_COGS$gentype=="core"]),table(COGS_C4$compartiment[COGS_C4$gentype=="core"])))
+C4core[is.na(C4core)]=0
+
+C3core=as.data.frame(bind_rows(table(C3_COGS$compartiment[C3_COGS$gentype=="core"]),table(COGS_C3$compartiment[COGS_C3$gentype=="core"])))
+C3core[is.na(C3core)]=0
+
+C2core=as.data.frame(bind_rows(table(C2_COGS$compartiment[C2_COGS$gentype=="core"]),table(COGS_C2$compartiment[COGS_C2$gentype=="core"])))
+C2core[is.na(C2core)]=0
+
+C1core=as.data.frame(bind_rows(table(C1_COGS$compartiment[C1_COGS$gentype=="core"]),table(COGS_C1$compartiment[COGS_C1$gentype=="core"])))
+C1core[is.na(C1core)]=0
+
+#Présent/potentiellement présent
+all_data=rbind(C1=C1core[2,]/C1core[1,],
+               C2=C2core[2,]/C2core[1,],
+               C3=C3core[2,]/C3core[1,],
+               C4=C4core[2,]/C4core[1,],
+               C5=C5core[2,]/C5core[1,],
+               C8=C8core[2,]/C8core[1,],
+               C9=C9core[2,]/C9core[1,])
+all_data=rbind(all_data,All_clades=colMeans(all_data))
+all_data[all_data == Inf] <- 0
+```
+
+```{r, include = TRUE}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,140 @@
+---
+title: "26_05_2023"
+author: "ARQUE Maxime"
+date: "2023-05-26"
+output: html_document
+---
+
+```{r Packages, message=FALSE, warning=FALSE, include=TRUE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+set.seed(1234)
+```
+
+# [ Partie 1 : Taux GAIN et perte général ]{style="color:red"}
+
+## [ Préparation du jeu de donnée GAIN/LOSS ]{style="color:blue"}
+
+```{r, include = TRUE, message=FALSE}
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Data_count/Count_BASH/family.txt", header=T, sep="\t", check.names = F)
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+```
+
+## [ Préparation du jeu de données compartiments/type de génome ]{style="color:blue"}
+
+```{r, include = TRUE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/Data_GARDON/dNdS.core-flex.bb-isl.CommREF.txt", header=T, sep="\t", check.names = F)
+
+data_merge_all=merge(data_count,data_compartiments, by.x="COG", all = TRUE)
+data_merge_spec=merge(data_count,unique(data_compartiments[,c(3,2,11)]), by="COG", all= FALSE)
+data_merge_spec$isl[data_merge_spec$isl=="nonISL"] ="Backbone"
+```
+
+## [ Taux de gain/perte par type de génome ]{style="color:blue"}
+
+```{r, include = TRUE}
+#Gains dans le flex et le core
+tablegain=table(data_merge_spec[,4], data_merge_spec[,2])
+tablegain=tablegain[,2:length(colnames(tablegain))]
+tablegain=cbind(Nombre_de_gain=rowSums(tablegain))
+
+#Pertes dans le flex et le core
+tableloss=table(data_merge_spec[,4], data_merge_spec[,3])
+tableloss=tableloss[,2:length(colnames(tableloss))]
+tableloss=cbind(Nombre_de_loss=rowSums(tableloss))
+
+matrix_gainloss=cbind(tablegain,tableloss)
+matrix_gainloss=cbind(matrix_gainloss, TotalRow=rowSums(matrix_gainloss))
+matrix_gainloss=rbind(matrix_gainloss, TotalCol=colSums(matrix_gainloss))
+```
+
+## [ Taux de gain/perte par compartiments ]{style="color:blue"}
+
+```{r, include = TRUE}
+#Gains dans ISL/backbone
+tablegain2=table(data_merge_spec[,5], data_merge_spec[,2])
+tablegain2=tablegain2[,2:length(colnames(tablegain2))]
+tablegain2=cbind(Nombre_de_gain=rowSums(tablegain2))
+
+#Pertes dans ISL/backbone
+tableloss2=table(data_merge_spec[,5], data_merge_spec[,3])
+tableloss2=tableloss2[,2:length(colnames(tableloss2))]
+tableloss2=cbind(Nombre_de_loss=rowSums(tableloss2))
+
+matrix_gainloss2=cbind(tablegain2,tableloss2)
+matrix_gainloss2=cbind(matrix_gainloss2, TotalRow=rowSums(matrix_gainloss2))
+matrix_gainloss2=rbind(matrix_gainloss2, TotalCol=colSums(matrix_gainloss2))
+```
+
+## [ Résultats ]{style="color:blue"}
+
+```{r, include = TRUE}
+print(matrix_gainloss)
+print(matrix_gainloss2)
+```
+
+## [ Comparaison data COUNT (7824) vs data hélène (1477) car hélène = COGs non dupliqués ]{style="color:blue"}
+
+```{r, include = TRUE}
+gainloss_count=data.frame(Gains=colSums(data_count["Gains"]), Losses=colSums(data_count["Losses"]))
+
+#Gainloss sur les 7824 COGs
+print(gainloss_count)
+
+#Gainloss sur les 1477 COGs
+print(matrix_gainloss[3,])
+
+b=(matrix_gainloss[3,])
+
+#Comparaison des deux
+print(gainloss_count/matrix_gainloss[3,])
+```
+
+#### 14 x plus de gain avec les COGs non annotés par hélène calculés par COUNT
+
+#### 3 x plus de loss avec les COGs non annotés par hélène calculés par COUNT
+
+```{r, include = TRUE}
+#Rapport gain/perte des deux
+#Pour les 7824 COGs
+print(gainloss_count[,1]/gainloss_count[,2])
+
+#Pour les 1477 COGs:
+print(b["Nombre_de_gain"]/b["Nombre_de_loss"])
+```
+
+#### Rapport d'environs 1 gain pour 1 loss pour les 7824
+
+#### Rapport d'environs 1 gain pour 0.2 loss pour les 1477
+
+# [ Partie 2 : Essais pour récupérer les COGs gagnés et perdus à chaques branches ]{style="color:red"}
+
+## [ Essai avec APE et phytools ]{style="color:blue"}
+
+```{r, include = TRUE}
+arbre = read.tree("/home/maarque/Donnees_projet/Data/SAGs_reduits/SAGs_reduits_reroot.nwk")
+matrice_cogs = read.table("/home/maarque/Donnees_projet/Data/SAGs_reduits/matrix_SAGs_reduits.tab", header = TRUE, row.names = 1, sep = "\t", check.names = F)
+
+
+# Associer les données de la matrice de COGs à l'arbre
+arbre$traits <- as.matrix(matrice_cogs)
+
+# map <- phylo.to.map(arbre)
+# 
+# # Convertir le map en un objet data.frame
+# df_cogs <- map.to.data.frame(map)
+# 
+# # Afficher la liste des COGs gagnés et perdus pour chaque branche
+# print(df_cogs)
+```
+
+#### J'ai pas eu le temps de voir si c'était possible d'extraire les COGs des branches
+
+#### A faire la prochaine fois : Rajouter les proportions de gain loss et distinguer les flex et les core dans la 2e matrice + voir si dans les COGS d'hélène il n'y a que des COGS non dupliqués + chercher si possible d'extraire le nom des COGs qui sont gagnés et perdus pour chaques évènements

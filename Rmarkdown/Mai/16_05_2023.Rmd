@@ -1,0 +1,188 @@
+---
+title: "Rapport Rmarkdown des résultats et erreurs obtenues avec Panstripe & cafe5"
+author: "ARQUE Maxime"
+date: "2023-05-16"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+
+
+<br />
+<br />
+
+## --- Partie Panstripe ---
+
+<br />
+<br />
+Utilisation des fichiers suivants : 
+<br />
+- ARBRE : concat-core-genes.phy_phyml_tree_GTR+I+G.txt 
+<br />
+- Matrice : matrice_binaire_equilibre.tab 
+<br />
+<br />
+J'ai aussi créer une matrice "matrice_sans_COGs_non_binaires.tab" mais les problèmes rencontrés sont les mêmes avec les deux matrices.
+<br />
+
+
+<br />
+~~~~ Chargement des librairies~~~~ 
+<br />
+
+```{r}
+library(panstripe)
+library(ape)
+library(patchwork)
+set.seed(1234)
+```
+
+<br />
+~~~~ Chargement des fichiers nécéssaires pour l'utilisation des panstripe~~~~ 
+<br />
+
+```{r, eval=TRUE, echo=TRUE}
+phylo.file.name="/home/maarque/Applications/Panstripe/Fichiers/concat-core-genes.phy_phyml_tree_GTR+I+G.txt"
+rtab.file.name="/home/maarque/Applications/Panstripe/Fichiers/matrice_binaire_equilibre.tab"
+tree <- read.tree(phylo.file.name)
+pa <- read_rtab(rtab.file.name)
+```
+<br />
+Le terminal annonce une (ou plusieurs erreurs), mais en utilisant problems(pa) rien ne s'affiche.
+
+<br />
+<br />
+~~~~ Utilisation de panstripe pour générer le dataframe "fit"~~~~ 
+<br />
+
+```{r, eval=FALSE,echo=TRUE}
+fit <- panstripe(pa, tree)
+
+Error in value[[3L]](cond) : 
+  Panstripe model fit failed! This can sometime be caused by unusual branch lengths.
+Setting fit_method='glmmTMB' or family='quasipoisson' or 'gaussian' often provides a more stable fit to difficult datasets
+
+--> génère une erreur (qui semblerait être dûe à un problème de longueur de branches)
+```
+<br />
+~~~~ Re-utilisation de panstripe, avec comme suggéré dans l'erreur, l'utilisation de d'autres settings  ~~~~ 
+
+<br /> 
+<br />
+--> Avec fit_method="glmmTMB", Rstudio se ferme donc impossible de l'utiliser
+<br />
+
+```{r, eval=FALSE,echo=TRUE}
+fit <- panstripe(pa, tree, fit_method = "glmmTMB")
+```
+<br /> 
+<br />
+<br />
+--> Avec family="quasipoisson"
+<br />
+
+```{r, eval=TRUE, echo=TRUE}
+fit <- panstripe(pa, tree, family = "quasipoisson")
+fit$summary
+plot_pangenome_params(fit)
+plot_pangenome_cumulative(fit)
+plot_gain_loss(fit)
+```
+
+<br /> 
+<br />
+<br />
+--> Avec family="gaussian"
+<br />
+```{r, eval=TRUE, echo=TRUE}
+fit <- panstripe(pa, tree, family = "gaussian")
+fit$summary
+plot_pangenome_params(fit)
+plot_pangenome_cumulative(fit)
+plot_gain_loss(fit)
+```
+
+<br />
+<br />
+
+Globalement, en terme d'arbre, les deux paramètres semblent donner le même arbre (d'ailleurs, j'ai cherché comment modifier les labels sur l'arbre avec panstripe, mais pour le moment je n'ai pas trouvé). Cependant, pour les valeurs de core,phi, et tip les valeurs sont très différentes sachant que : 
+<br />
+- TIP : indique des associations avec des gènes observés sur les pointes de la phylogénie. Ceux-ci sont généralement entraînés par une combinaison d’erreurs d’annotation et en fonction de la densité d’échantillonnage temporelle également des éléments très mobiles qui ne sont pas observés dans plusieurs génomes.
+<br />
+- CORE : indique si les longueurs de branche dans la phylogénie sont associées au gain et à la perte de gènes. 
+<br />
+- PHI : le paramètre d’indice inféré de la distribution Tweedie sous-jacente utilisée dans le GLM
+<br />
+
+<br />
+<br />
+
+## Panstripe + cafe5
+
+<br />
+<br />
+Utilisation des fichiers suivants pour cafe5 : 
+<br />
+- ARBRE : concat-core-genes.phy_phyml_tree_GTR+I+G.txt 
+<br />
+- Matrice : cog_families.txt 
+<br />
+
+
+<br />
+Il semblait y'avoir un problème initialement avec la longueur des branches sur panstripe même avec l'utilisation de d'autres paramètres. En utilisant cafe5 j'ai eu un autre message d'erreur avec la commande suivante :
+<br />
+
+```{r, eval=FALSE, echo=TRUE}
+cafe5 -i cog_families.txt -t ../concat-core-genes.phy_phyml_tree_GTR+I+G.txt -k 3
+
+Erreur : Invalid branch length set for 496G15_C2 & 498N8_C2
+```
+<br />
+J'ai donc utilisé R avec ape pour pouvoir chercher la longueur de ces branches et potentiellement identifier le problème.
+<br />
+
+```{r, eval=TRUE, echo=TRUE}
+library(ape)
+tree=read.tree(file = "Fichiers/concat-core-genes.phy_phyml_tree_GTR+I+G.txt")
+plot(tree, cex = 0.3)
+```
+
+<br />
+Après ça j'ai cherché la longueur des branches en fonction de chaque SAGs : 
+<br />
+
+
+```{r, eval=TRUE, echo=TRUE}
+lengths=setNames(tree$edge.length[sapply(1:length(tree$tip.label),function(x,y) which (y==x),y=tree$edge[,2])],tree$tip.label) 
+print(lengths["496G15_C2"])
+print(lengths["498N8_C2"])
+```
+<br />
+Ainsi 496G15_C2 = 0.00015106 et 498N8_C2 = 0.00025115. Les deux sont situées sur la même branche avec 528J14_C2
+<br />
+```{r, eval=TRUE, echo=TRUE}
+print(lengths["528J14_C2"])
+```
+<br />
+Et donc 528J14_C2 = 7.628e-05. Pour une vision plus globale de la longueur des branches :
+<br />
+```{r, eval=TRUE, echo=TRUE}
+print(lengths)
+```
+
+<br />
+<br />
+Cependant je n'ai pas réussi à comprendre pourquoi les deux longueurs de branches de 496G15_C2 et 498N8_C2 posent problème, et surtout s'il y'en a d'autres en dehors de ces deux là avec lesquelles il y'a un problème (je pense que s'il y'avait d'autres branches problématiques dans le message d'erreur, les autres auraient été signalées aussi mais on sait jamais)
+<br />
+<br />
+<br />
+<br />
+Pour count, tout semble marcher correctement (pas de messages d'erreurs) et fonctionne avec les 3 matrices : la matrice initiale d'Hélène GARDON (ALL.cogs2.matrix) que j'ai modifié pour que le format corresponde, la matrice "matrice_binaire_equilibre_count.tab" avec tous les notations au dessus de 1 ramenées à 1 et la matrice "matrice_sans_COGs_non_binaires_count.tab" ou j'ai supprimé toutes les lignes avec des valeurs au dessus de 1 (au final on passe de 7825 lignes à 7644 soit seulement 181 COGs en moins, c'est qui est pas si grand que ça)
+
+
+<br />
+<br />
+

@@ -1,0 +1,268 @@
+---
+title: "23/05/2023"
+author: "ARQUE Maxime"
+date: "2023-05-19"
+output: html_document
+---
+
+<br/>
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+library(ggpmisc)
+set.seed(1234)
+```
+
+# <span style="color:red"> Partie 1 </span>
+
+## <span style="color:blue"> Création des DF pour comparaison wagner/pgl </span>
+
+```{r, include = TRUE}
+data_PGL=read.table("/home/maarque/Donnees_projet/Data/SAGs_reduits/Data_count/Matrix_data_count2.tab",header = TRUE,sep="\t")
+data_WAGNER=read.table("/home/maarque/Donnees_projet/Data/SAGs_reduits/Data_count/Matrix_data_count_WAGNER.tab",header = TRUE,sep="\t")
+
+# Ajout d'une colonne total gain/loss au dataframe de count qui n'en a pas
+data_PGL=cbind(data_PGL,data.frame(data_PGL$gain+data_PGL$loss))
+colnames(data_PGL)[6]="total_gainloss_PGL"
+colnames(data_PGL)[3:4]=c("Gain_PGL","Loss_PGL")
+
+data_WAGNER=cbind(data_WAGNER,data.frame(data_WAGNER$gain+data_WAGNER$loss))
+colnames(data_WAGNER)[6]="total_gainloss_WAGNER"
+colnames(data_WAGNER)[3:4]=c("Gain_WAGNER","Loss_WAGNER")
+
+merged_df=merge.data.frame(data_PGL,data_WAGNER,by="Node")
+merged_df = subset(merged_df, select = -c(Number.of.selected.families.present.at.the.node.x,edge.length.x,Number.of.selected.families.present.at.the.node.y,edge.length.y))
+```
+
+## <span style="color:blue"> Comparaison des données PGL/WAGNER </span>
+
+```{r, include = TRUE}
+
+merged_df=cbind(merged_df,round(merged_df$Gain_PGL/merged_df$Gain_WAGNER,1),
+                round(merged_df$Loss_PGL/merged_df$Loss_WAGNER,1),
+                round(merged_df$total_gainloss_PGL/merged_df$total_gainloss_WAGNER,1))
+colnames(merged_df)[8:10]=c("Gain_PGL_WAGNER","Loss_PGL_WAGNER","GainLoss_PGL_WAGNER")
+
+```
+
+## <span style="color:blue"> Barplots des résultats </span>
+
+```{r, include = TRUE, warning=FALSE, error=FALSE}
+
+merged_df=merged_df[c(1,11,12,13,23,33,34,35,36,2,3,4,5,6,7,8,9,10,14,15,16,17,18,19,20,21,22,24,25,26,27,28,29,30,31,32,37),]
+
+liste=c("495K23 C1","495L20 C3","496A2 C3","496N4 C1","498A3 C8","498B22 C2","498C16 C2","498I20 C5","498P15 C1","518A17 C3","520K10 C9","521B10 C1","527L22 C8","528J8 C9","528N17 C4","529C4 C1","529D18 C3","529J15 C3","P9312","1 []","2 []","3 []","4 []","5 []","6 []","7 []","8 []","9 []","10 []","11 []","12 []","13 []","14 []","15 []","16 []","17 []","18 []")
+merged_df$Node=factor(merged_df$Node, levels=liste)
+
+#Barpot de la détection du nombres d'évènements en fonction de panstripe et count.
+ggplot(merged_df, aes(x = Node)) +
+  geom_bar(aes(y = total_gainloss_PGL, fill = "total_gainloss_PGL"), 
+           position = position_dodge(), 
+           stat = "identity", 
+           alpha = 0.5) +
+  geom_bar(aes(y = total_gainloss_WAGNER, fill = "total_gainloss_WAGNER"), 
+           position = position_dodge(), 
+           stat = "identity", 
+           alpha = 0.5) +
+  labs(title = "Barplot des gainloss_PGL et gainloss_WAGNER",x = "Label",y = "Nombre d'évènements",fill = "") + scale_fill_manual(values = c("total_gainloss_PGL" = "blue", "total_gainloss_WAGNER" = "red")) +theme_minimal()+theme(axis.text.x = element_text(size=6, angle = 45, vjust = 1, hjust=1,color="black"))+theme(axis.text.y = element_text(color="black"))
+
+#Barpot de la détection du nombres de gain en fonction de panstripe et count.
+ggplot(merged_df, aes(x = Node)) +
+  geom_bar(aes(y = Gain_PGL, fill = "Gain_PGL"), 
+           position = position_dodge(), 
+           stat = "identity", 
+           alpha = 0.5) +
+  geom_bar(aes(y = Gain_WAGNER, fill = "Gain_WAGNER"), 
+           position = position_dodge(), 
+           stat = "identity", 
+           alpha = 0.5) +
+  labs(title = "Barplot des gain_PGL et gain_WAGNER",x = "Label",y = "Nombre de gain",fill = "") + scale_fill_manual(values = c("Gain_PGL" = "blue", "Gain_WAGNER" = "red")) +theme_minimal()+theme(axis.text.x = element_text(size=6, angle = 45, vjust = 1, hjust=1,color="black"))+theme(axis.text.y = element_text(color="black"))
+
+#Barpot de la détection du nombres de gain en fonction de panstripe et count.
+ggplot(merged_df, aes(x = Node)) +
+  geom_bar(aes(y = Loss_PGL, fill = "Loss_PGL"), 
+           position = position_dodge(), 
+           stat = "identity", 
+           alpha = 0.5) +
+  geom_bar(aes(y = Loss_WAGNER, fill = "Loss_WAGNER"), 
+           position = position_dodge(), 
+           stat = "identity", 
+           alpha = 0.5) +
+  labs(title = "Barplot des loss_PGL et loss_WAGNER",x = "Label",y = "Nombre de loss",fill = "") + scale_fill_manual(values = c("Loss_PGL" = "blue", "Loss_WAGNER" = "red")) +theme_minimal()+theme(axis.text.x = element_text(size=6, angle = 45, vjust = 1, hjust=1,color="black"))+theme(axis.text.y = element_text(color="black"))
+
+ggplot(merged_df, aes(x = merged_df$total_gainloss_PGL, y = merged_df$total_gainloss_WAGNER)) +
+  geom_point(color="blue") + geom_smooth(method="lm",se = FALSE, color="red")+geom_text(aes(label=merged_df$Node),vjust=-1, size=2)+
+    stat_poly_eq(use_label("eq")) +
+  stat_poly_eq(label.y = 0.9) +
+  xlab("Nombre d'événements de PGL") + 
+  ylab("Nombre d'événements de WAGNER") + 
+  ggtitle("Nombre d'événements de PGL vs WAGNER") 
+```
+
+## <span style="color:blue"> Comparaison des données PANSTRIPE vs WAGNER </span>
+
+### <span style="color:orange"> J'ai calculé le % de diff pour panstripe vs count sans P9312 : passage de 20% à 12% de différence (Rmarkdown 22_05_2023) </span>
+
+```{r, include = TRUE, error=FALSE, warning=FALSE, message=FALSE}
+# Import des data pour panstripe 
+
+phylo.file.name="/home/maarque/Donnees_projet/Data/SAGs_reduits/SAGs_reduits_reroot.nwk"
+rtab.file.name="/home/maarque/Donnees_projet/Data/ALL_SAGS/matrice_binaire_equilibre.tab"
+tree <- read.tree(phylo.file.name)
+pa <- read_rtab(rtab.file.name)
+
+SAGs=c("496N4_C1","521B10_C1","498P15_C1","529C4_C1","495K23_C1","498B22_C2","498C16_C2","529D18_C3","496A2_C3","529J15_C3","518A17_C3","495L20_C3","528N17_C4","498I20_C5","498A3_C8","527L22_C8","520K10_C9","528J8_C9","P9312")
+pa=pa[SAGs,]
+
+# Utilisation de Panstripe
+fit <- panstripe(pa, tree, family="quasipoisson")
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+```
+## <span style="color:blue"> Re-attribution des branches </span>
+
+
+```{r, include = TRUE, error=FALSE, warning=FALSE, message=FALSE}
+
+# Utilisation de gt et data_WAGNER pour la comparaison
+
+gt$label[20:37]=c("root","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q")
+data_WAGNER$Node[20:37]=c("B","G","I","K","J","H","F","M","O","Q","P","N","L","E","D","C","A","root")
+data_WAGNER$Node=sub(" ","_",data_WAGNER$Node)
+
+# Changement du nom de colonne pour pouvoir merge sur la même colonne
+colnames(data_WAGNER)[1]="label"
+merged_df2=merge.data.frame(gt,data_WAGNER,by="label")
+merged_df2 = subset(merged_df2, select = -c(x,y,branch,angle,parent,node,branch.length,edge.length))
+merged_df2$trait=round(merged_df2[,3])
+colnames(merged_df2)[3]="total_gainloss_PANSTRIPE"
+
+#Ajout de deux colonnes de comparaison du total gain/perte
+merged_df2=cbind(merged_df2,round(merged_df2$total_gainloss_PANSTRIPE/merged_df2$total_gainloss_WAGNER,2),100-round(merged_df2$total_gainloss_PANSTRIPE*100/merged_df2$total_gainloss_WAGNER,2))
+
+#Rename les colonnes
+colnames(merged_df2)[8:9]=c("panstripe/wagner","% _diff")
+print(merged_df2[,c(1,2,3,7,8,9)])
+
+```
+
+## <span style="color:blue"> Données PANSTRIPE vs WAGNER </span>
+
+```{r, include = TRUE, error=FALSE, warning=FALSE, message=FALSE}
+#Calcul de la moyenne de la différence entre panstripe et count pour les branches TIP
+print(mean(abs(merged_df2$`% _diff`[merged_df2$isTip=="TRUE"]),na.rm=T))
+
+#Calcul de la moyenne de la différence entre panstripe et count pour les branches NON TIP
+print(mean(abs(merged_df2$`% _diff`[merged_df2$isTip=="FALSE"]),na.rm=T))
+
+```
+
+## <span style="color:blue"> Barplots des résultats </span>
+
+```{r, include = TRUE, error=FALSE, warning=FALSE, message=FALSE}
+
+ggplot(merged_df2, aes(x = label, y=merged_df2$`% _diff`)) + 
+    geom_bar(stat = "identity", position = "dodge", fill = "blue")+scale_fill_brewer(palette = "Set1")+theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+ ggtitle("Pourcentage de différence entre panstripe et wagner")+labs(y = "% de différence", x = "Label")
+
+
+#Barpot de la détection du nombres d'évènements en fonction de panstripe et count.
+ggplot(merged_df2, aes(x = label)) +
+  geom_bar(aes(y = total_gainloss_PANSTRIPE, fill = "gainloss_PANSTRIPE"), 
+           position = position_dodge(), 
+           stat = "identity", 
+           alpha = 0.5) +
+  geom_bar(aes(y = total_gainloss_WAGNER, fill = "gainloss_WAGNER"), 
+           position = position_dodge(), 
+           stat = "identity", 
+           alpha = 0.5) +
+  labs(title = "Barplot des gainloss_PANSTRIPE et gainloss_WAGNER",x = "Label",y = "Nombre d'évènements",fill = "") + scale_fill_manual(values = c("gainloss_PANSTRIPE" = "blue", "gainloss_WAGNER" = "red")) +theme_minimal()+theme(axis.text.x = element_text(size=6, angle = 45, vjust = 1, hjust=1,color="black"))+theme(axis.text.y = element_text(color="black"))
+
+ggplot(merged_df, aes(x = merged_df2$total_gainloss_PANSTRIPE, y = merged_df2$total_gainloss_WAGNER)) +
+  geom_point(color="blue") + geom_smooth(method="lm",se = FALSE, color="red")+geom_text(aes(label=merged_df2$label),vjust=-1, size=2)+
+  stat_poly_eq(use_label("eq")) +
+  stat_poly_eq(label.y = 0.9) +
+  xlab("Nombre d'événements de PANSTRIPE") + 
+  ylab("Nombre d'événements de WAGNER") + 
+  ggtitle("Nombre d'événements de PANSTRIPE vs WAGNER") 
+
+
+```
+```{r, include = TRUE, error=FALSE, warning=FALSE, message=FALSE}
+# Pourcentage de diff TIP
+print((mean(abs(merged_df2$`% _diff`[merged_df2$isTip=="TRUE"]),na.rm=T)))
+
+# Pourcentage de diff NON TIP
+print((mean(abs(merged_df2$`% _diff`[merged_df2$isTip=="FALSE"]),na.rm=T)))
+
+# Sans la branche A (donc NON TIP) :
+data2=merged_df2$`% _diff`[merged_df2$isTip=="FALSE" & merged_df2$label!="A"]
+print(mean(abs(data2),na.rm=T))
+
+# Soit une perte de % de différence de :
+print((mean(abs(merged_df2$`% _diff`[merged_df2$isTip=="FALSE"]),na.rm=T))-mean(abs(data2),na.rm=T))
+```
+
+## <span style="color:blue"> Conclusion des résultats </span>
+
+### PGL vs WAGNER
+##### Il semblerait que les résultats soient assez disparates. En étudiant les gain/loss indépendament, on constate que  pour les gains, WAGNER a tendance à en trouver significativement plus que PGL. Pour les loss c'est le contraire,  il semble que PGL en trouve significativement plus.
+##### A partir du plot en nuage de points, on a à peu près la même répartition que Panstripe vs PGL.
+
+### PANSTRIPE vs WAGNER
+##### Globalement, il semble que les résultats de WAGNER et panstripe convergent. Les % différences ont l'air significativement plus faibles que pour panstripe vs pgl et pgl vs wagner. Il semble que seule la branche A (branche après la root) présente des évènements significativement différents. J'ai regardé la différence de % en ne prenant pas en compte la branche "A" et avec ça on passe de 20.5 à 14%, soit une baisse de 6.5% dans les non tips. Pour les tips on a un % de différence de 4.5 ce qui ne parait pas si énorme. 
+
+
+
+### Pourquoi ces différences ?
+##### PGL est une méthode qui prend en compte la propension à la perte de gènes lors de l'évolution des espèces. Elle repose sur l'idée que certains gènes sont plus susceptibles d'être perdus au fil du temps, soit en raison de mutations génétiques, soit en raison de la perte de fonctions. PGL cherche à identifier les gènes qui ont été perdus de manière indépendante chez différentes espèces et utilise ces informations pour reconstruire les relations phylogénétiques.
+
+##### Wagner parsimony est une méthode basée sur le principe de la parcimonie, qui cherche à minimiser le nombre total de changements évolutifs nécessaires pour expliquer les différences observées entre les espèces. Dans le contexte de l'analyse par Wagner parsimony, les changements évolutifs sont généralement considérés comme des changements de caractères discrets, tels que des mutations génétiques spécifiques ou des caractéristiques morphologiques. Cette méthode suppose que les changements évolutifs se produisent de manière additive et cherche à trouver l'arbre phylogénétique qui nécessite le moins de changements évolutifs pour expliquer les données observées.
+
+##### PGL se concentre spécifiquement sur la perte de gènes comme source d'information phylogénétique, alors que Wagner parsimony cherche à minimiser le nombre total de changements évolutifs nécessaires pour expliquer les différences entre les espèces, en prenant en compte divers types de caractères.
+
+##### Panstripe se rapproche davantage de l'analyse par Wagner parsimony, il utilise un algorithme de parcimonie pour reconstruire des arbres phylogénétiques donc : il cherche à minimiser le nombre de changements évolutifs nécessaires pour expliquer les différences observées entre les espèces.
+
+##### Wagner parsimony repose également sur le principe de la parcimonie et cherche à trouver l'arbre phylogénétique qui nécessite le moins de changements évolutifs pour expliquer les données.
+
+<br/>
+<br/>
+
+# <span style="color:darkgreen"> Partie 2 </span>
+
+## <span style="color:blue"> Nouvelle analyse panstripe sur l'arbre des 88 SAGs re-raciné comme il faut </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE, warning=FALSE}
+phylo.file.name="/home/maarque/Donnees_projet/Data/ALL_SAGS/Tree_all_sags_reroot.nwk"
+rtab.file.name="/home/maarque/Donnees_projet/Data/ALL_SAGS/matrice_binaire_equilibre.tab"
+tree <- read.tree(phylo.file.name)
+pa <- read_rtab(rtab.file.name)
+```
+
+```{r, include = TRUE}
+fit <- panstripe(pa, tree, family="quasipoisson")
+plot_pangenome_params(fit)
+plot_pangenome_cumulative(fit)
+```
+
+## <span style="color:red"> Plot de l'arbre des 88 SAGs re-raciné </span>
+```{r, include = TRUE}
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+data_x=gt$x
+data_y=gt$y
+data_labels=round(gt$trait)
+
+# Plot gainloss
+plot_gain_loss(fit,tip_label = FALSE)+geom_tiplab(align=TRUE,size=1.2,color="black")+ geom_text(aes(data_x,data_y),label=data_labels, check_overlap = FALSE, color="red", size=1,hjust=-0.5,vjust=-0.3)
+
+
+```
+
+
+
+

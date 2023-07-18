@@ -1,0 +1,52 @@
+---
+title: "12_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-12"
+output: html_document
+---
+
+# <span style="color:red"> Suite du 09_06_2023 </span>
+
+## <span style="color:blue"> Regroupement de tous les alignements dans un fichier par COGS (SAGS + 20 genrefs)  </span>
+
+```{r, engine='bash', eval=FALSE}
+# Récupération des fichiers og d'hélène
+for file in $files ; do number=$(echo "$file" | cut -d'/' -f6) ; cp $file ./$number ; done
+
+# Je récupère tous les chemins ou un fichiers HMM a été généré
+files=$(find -name "HMM_*")
+
+# Alignement à partir d'un profil HMM puis récupération de cet alignement au format FASTA.
+for file in $files ; do name=$(echo $file | cut -d "/" -f2) ; cd $name ; if ls All_COGS* 1> /dev/null 2>&1; then hmmalign --outformat phylip --dna --trim --mapali og* HMM_COG* All_COGS* > phylip$name ; seqret phylip$name Alignement_$name.fasta ; awk -i inplace '!/MIT9312/' RS=">" ORS=">" Alignement_$name.fasta ; awk -i inplace '!/^>$/ || NR==1' Alignement_$name.fasta ; fi ; cd .. ; done
+
+```
+
+## <span style="color:blue"> Concaténation de tous les COGS avec "AMAS" </span>
+
+```{r, engine='bash', eval=FALSE}
+# Parcourir tous les COGS
+files=$(find -name "Align*" -type f | sort -t '/' -k2n)
+
+# Utilisation d'AMAS pour concaténer toutes les séquences. AMAS utilise des "?" quand il n'y pas de séquences, donc je les remplaces avec sed par des "NNNNNN"
+amas concat -i $files -f fasta -d dna --concat-out concatenated_cogs.fna
+sed -i 's/?/N/g' concatenated_cogs.fna
+
+# Utilisation de raxml pour générer l'arbre à partir des séquences concaténées de COGS
+raxmlHPC -s concatenated_cogs.fna  -n tree -m GTRGAMMA -p 1
+```
+
+## <span style="color:blue"> Compte rendu sur les données obtenues </span>
+
+#### 
+
+```{r, engine='bash', eval=FALSE}
+Cogs=$(find -name "All_COGS*" | cut -d "/" -f2)
+HMM=$(find -name "HMM_*" | cut -d "/" -f2)
+```
+
+```{r, engine='bash', eval=FALSE}
+Hélène : 1204 COGS
+Moi : 2296 COGS dont 1103 qui correspondent
+
+Soit une différence de 101
+```

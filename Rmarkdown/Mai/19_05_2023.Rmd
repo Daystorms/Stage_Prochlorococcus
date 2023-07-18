@@ -1,0 +1,201 @@
+---
+title: "19/05/2023"
+author: "ARQUE Maxime"
+date: "2023-05-19"
+output: html_document
+---
+
+<br/>
+
+```{r, include=TRUE, message=FALSE, warning=FALSE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+set.seed(1234)
+```
+
+
+## <span style="color:blue"> Sélection des 18 SAGs + génome de référence </span>
+
+```{r echo = TRUE, results="hide", message=FALSE, warning=FALSE}
+# SAGs : 496_N4_C1 / 521B10_C1 / 498P15_C1 / 529C4_C1 / 495K23_C1 / 498B22_C2 / 498C16_C2 / 529D18_C3 / 496A2_C3 / 529J15_C3 / 518A17_C3 / 495L20_C3 / 528N17_C4 / 498I20_C5 / 498A3_C8 / 527L22_C8 / 520K10_C9 / 528J8_C9 / P9312
+```
+
+###### **Je les ai récupérés à partir de la table des SAGs dans la thèse d'Hélène GARDON**
+
+```{r echo = TRUE, results="hide", message=FALSE, warning=FALSE}
+phylo.file.name="/home/maarque/Donnees_projet/Data/ALL_SAGS/concat-core-genes.phy_phyml_tree_GTR+I+G.txt"
+rtab.file.name="/home/maarque/Donnees_projet/Data/ALL_SAGS/matrice_binaire_equilibre.tab"
+tree <- read.tree(phylo.file.name)
+pa <- read_rtab(rtab.file.name)
+```
+
+## <span style="color:blue"> Extraction des 18 feuilles de l'arbre </span>
+
+```{r, include = TRUE}
+SAGs=c("496N4_C1","521B10_C1","498P15_C1","529C4_C1","495K23_C1","498B22_C2","498C16_C2","529D18_C3","496A2_C3","529J15_C3","518A17_C3","495L20_C3","528N17_C4","498I20_C5","498A3_C8","527L22_C8","520K10_C9","528J8_C9","P9312")
+
+tree = KeepTip(tree, SAGs, preorder = TRUE)
+pa=pa[SAGs,]
+```
+
+## <span style="color:blue"> Re-utilisation de panstripe sur le jeu de données réduit </span>
+
+```{r, include = TRUE}
+fit <- panstripe(pa, tree, family="quasipoisson")
+```
+
+###### **On a toujours le même problème si on utilise pas "quasipoisson" : Panstripe model fit failed! This can sometime be caused by unusual branch lengths**
+
+## <span style="color:blue"> Plots du nouveau fit du jeu de données réduit </span>
+
+```{r, include = TRUE}
+plot_pangenome_params(fit)
+plot_pangenome_cumulative(fit)
+```
+
+## <span style="color:blue"> Arbre de gain et pertes de gènes du nouveau jeu de données </span>
+
+```{r, include = TRUE}
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+data_x=gt$x
+data_y=gt$y
+data_labels=round(gt$trait)
+
+#Arbre gain/perte qui affiche les gains/pertes de gènes
+plot_gain_loss(fit,tip_label = FALSE)+geom_tiplab(align=TRUE,size=1.2,color="black")+
+  geom_text(aes(data_x,data_y),label=data_labels, check_overlap = FALSE, color="red", size=2,hjust=-0.5,vjust=-0.3)
+
+#Créer le fichier de l'arbre au format newick
+write_tree(tree, file = "/home/maarque/Applications/Fichiers/SAGs_reduits/SAGs_reduits.nwk", append = F)
+
+#La matrice était pas dans le bon sens donc je l'ai tranposée
+matrice_transpo=t(pa)
+
+#Export de la matrice
+write.table(matrice_transpo, file="/home/maarque/Applications/Fichiers/SAGs_reduits/Rmatrix.tab", row.names=TRUE, col.names=TRUE, sep="\t")
+
+
+```
+
+###### Les données de l'arbre (numéro de branche, nombre de gain/perte, branche tip/core) sont stockées dans "gt"
+
+## <span style="color:blue"> Importation des données de count </span>
+###### **Je n'ai pas trouvé d'outil sur count pour importer les résultats en termes de gain/perte de gènes, donc j'ai sélectionné tous les COGs (avec ctrl + A) et dans la fenêtre de résultats j'ai copié/collé les valeurs de chacune des branches dans un fichier .csv**
+
+```{r, include = TRUE}
+data_count=read.table("/home/maarque/Applications/Fichiers/SAGs_reduits/Matrix_data_count.tab",header = TRUE,sep="\t")
+
+# Comme count nécéssitait de supprimer les "_", je les remets ici pour pouvoir comparer les deux data frames
+data_count$Node=sub(" ","_",data_count$Node)
+
+# Ajout d'une colonne total gain/loss au dataframe de count qui n'en a pas
+data_count=cbind(data_count,data.frame(data_count$gain+data_count$loss))
+colnames(data_count)[6]="total_gainloss"
+```
+
+## <span style="color:blue"> Ajout de lettres pour identification des branches non tip </span>
+###### **Elles n'ont pas de noms attribués et pour les comparer facilement je leurs attribue un nom : A,B,C.... car pas possible de les identifier par leurs lengths car y'a 11 lengths qui sont partagées par plusieurs branches. Je ne voyais pas comment faire autrement pour faire ça, donc je l'ai fait manuellement en regardant la correspondance des branches entre les deux programmes**
+
+```{r, include = TRUE}
+#Attribution des lettres de chaques branches
+gt$label[20:36]=c("A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q")
+data_count$Node[20:36]=c("G","J","I","K","H","F","M","O","Q","P","N","L","E","D","C","B","A")
+
+
+#Changement du nom de colonne pour pouvoir merge sur la même colonne
+colnames(data_count)[1]="label"
+merged_df=merge.data.frame(gt,data_count,by="label")
+
+#Suppression des colonnes inutiles, et changement de nom des colonnes
+merged_df = subset(merged_df, select = -c(x,y,branch,angle,parent,node,branch.length,edge.length))
+colnames(merged_df)=c("Label","IsTip","gainloss_PANSTRIPE","Number_of_COGS_at_node_COUNT","gain_COUNT","loss_COUNT","gainloss_COUNT")
+
+#Changement de l'ordre des colonnes
+merged_df=merged_df[ , c("Label","IsTip","gainloss_PANSTRIPE","gainloss_COUNT","gain_COUNT","loss_COUNT","Number_of_COGS_at_node_COUNT")]
+
+#Arrondi des valeurs
+merged_df$gainloss_PANSTRIPE=round(merged_df$gainloss_PANSTRIPE)
+```
+
+## <span style="color:blue"> Comparaison panstripe/count </span>
+
+```{r, include = TRUE}
+#Ajout de deux colonnes de comparaison du total gain/perte
+merged_df=cbind(merged_df,round(merged_df$gainloss_PANSTRIPE/merged_df$gainloss_COUNT,2),100-round(merged_df$gainloss_PANSTRIPE*100/merged_df$gainloss_COUNT,2))
+#Rename les colonnes
+colnames(merged_df)[8:9]=c("panstripe/count","% _diff")
+
+print(merged_df[c(1,3,4,8,9)])
+
+#Calcul de la moyenne de la différence entre panstripe et count
+moy_diff=mean(abs(merged_df$`% _diff`), na.rm = T)
+print(moy_diff)
+
+#Calcul de la moyenne de la différence entre panstripe et count pour les branches TIP
+print(mean(abs(merged_df$`% _diff`[merged_df$IsTip=="TRUE"]),na.rm=T))
+
+#Calcul de la moyenne de la différence entre panstripe et count pour les branches NON TIP
+print(mean(abs(merged_df$`% _diff`[merged_df$IsTip=="FALSE"]),na.rm=T))
+
+
+```
+
+## <span style="color:blue"> Barplots des résultats </span>
+
+```{r, include = TRUE}
+# Barplot du % de différence
+ggplot(merged_df, aes(x = Label, y=merged_df$`% _diff`)) + 
+    geom_bar(stat = "identity", position = "dodge", fill = "blue")+scale_fill_brewer(palette = "Set1")+theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))+ ggtitle("Pourcentage de différence entre panstripe et count")+labs(y = "% de différence", x = "Label")
+
+#Barpot de la détection du nombres d'évènements en fonction de panstripe et count.
+ggplot(merged_df, aes(x = Label)) +
+  geom_bar(aes(y = gainloss_PANSTRIPE, fill = "gainloss_PANSTRIPE"), 
+           position = position_dodge(), 
+           stat = "identity", 
+           alpha = 0.5) +
+  geom_bar(aes(y = gainloss_COUNT, fill = "gainloss_COUNT"), 
+           position = position_dodge(), 
+           stat = "identity", 
+           alpha = 0.5) +
+  labs(title = "Barplot des gainloss_PANSTRIPE et gainloss_COUNT",
+       x = "Label",
+       y = "Nombre d'évènements",
+       fill = "") +
+  scale_fill_manual(values = c("gainloss_PANSTRIPE" = "blue", "gainloss_COUNT" = "red")) +
+  theme_minimal()+theme(axis.text.x = element_text(size=6, angle = 45, vjust = 1, hjust=1, color="black"))+theme(axis.text.y = element_text(color="black"))
+```
+
+<br/>
+<br/>
+
+## <span style="color:blue"> Conclusion vis-à-vis des résultats obtenus </span>
+
+##### A partir du premier graph, il semblerait que le différentiel d'évènements calculé se situe essentiellement au niveau du calcul pour les branches qui ne sont pas tip (les branches non tip présentent les % les plus élevés)
+
+##### Branche A = 0 car branche initiale de l'arbre (racine)
+
+##### A partir du deuxième graph, il semblerait que count ait tendance à plus souvent/facilement trouver des évènements supplémentaires vis-à-vis de panstripe (beaucoup de barres oranges qui dépassent). Il semblerait aussi que panstripe trouve plus souvent des évènements en moins (barres bleus)
+
+##### **Donc on a en moyenne un différence de calcul d'évènements entre Panstripe et Count d'environs 32%** (ce qui est quand même assez conséquent je suppose). La question était donc de savoir si on pouvait coupler les deux outils pour pouvoir identifier le nombre de gain/perte et identifier directement sur quels COGs cela se portait. Avec une différence de 32% (ce qui est donc conséquent), je suppose que c'est donc difficilement possible. 
+
+##### **CEPENDANT** en analysant les % de différences entre les TIP et NON TIP, on constate que la différence semble être moindre sur les TIP (environs 13% contre 55% pour les NON TIP). Donc pour les TIP la différence ne semble pas si énorme que ça en termes de différences dans la quantité d'évènements, après reste à voir si les évènements (gain/perte) le sont aussi ou non 
+##### **--> Comme on en avait parlé la dernière fois : essayer de voir si on peut trouver les gains/pertes dans panstripe (dans le code source) pour pouvoir comparer avec count ? Et voir si il est possible pour panstripe, comme pour count, d'identifier exactement quels COGs ça touche ?**
+
+<br/>
+<br/>
+
+
+
+
+
+
+
+
+
+

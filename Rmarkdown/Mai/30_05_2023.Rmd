@@ -1,0 +1,267 @@
+---
+title: "30_05_2023"
+author: "ARQUE Maxime"
+date: "2023-05-30"
+output: html_document
+---
+
+
+```{r Packages, message=FALSE, warning=FALSE, include=TRUE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+library(phytools)
+library(rpart)
+set.seed(1234)
+```
+
+# <span style="color:red"> Partie 1 : Taux gain et perte général avec le nouveau jeu de données (2545) </span>
+
+## <span style="color:blue"> Préparation du jeu de donnée  GAIN/LOSS </span>
+
+```{r, include = TRUE, message=FALSE}
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Data_count/Count_BASH/family.txt", header=T, sep="\t", check.names = F)
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+```
+
+## <span style="color:blue"> Préparation du jeu de données compartiments/type de génome  </span>
+
+```{r, include = TRUE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/Data_GARDON/LN_2545_COGs_ISL_et_BKB", header=T, sep="\t", check.names = F)
+
+data_merge_all=merge(data_count,data_compartiments, by.x="COG", all = TRUE)
+data_merge_spec=merge(data_count,unique(data_compartiments[,c(1,10,11)]), by="COG", all= FALSE)
+```
+
+#### Essayer plus tard les 2544 + 1477 de l'autre fichier d'hélène
+
+## <span style="color:blue"> Taux de gain/perte par type de génome  </span>
+
+```{r, include = TRUE}
+#Gains dans le flex et le core
+tablegain=table(data_merge_spec[,5], data_merge_spec[,2])
+tablegain=tablegain[,2:length(colnames(tablegain))]
+tablegain=cbind(Nombre_de_gain=rowSums(tablegain))
+
+#Pertes dans le flex et le core
+tableloss=table(data_merge_spec[,5], data_merge_spec[,3])
+tableloss=tableloss[,2:length(colnames(tableloss))]
+tableloss=cbind(Nombre_de_loss=rowSums(tableloss))
+
+matrix_gainloss=cbind(tablegain,tableloss)
+matrix_gainloss=cbind(matrix_gainloss, TotalRow=rowSums(matrix_gainloss))
+matrix_gainloss=rbind(matrix_gainloss, TotalCol=colSums(matrix_gainloss))
+```
+
+## <span style="color:blue"> Taux de gain/perte par compartiments  </span>
+
+```{r, include = TRUE}
+#Gains dans ISL/backbone
+tablegain2=table(data_merge_spec[,4], data_merge_spec[,2])
+tablegain2=tablegain2[,2:length(colnames(tablegain2))]
+tablegain2=cbind(Nombre_de_gain=rowSums(tablegain2))
+
+#Pertes dans ISL/backbone
+tableloss2=table(data_merge_spec[,4], data_merge_spec[,3])
+tableloss2=tableloss2[,2:length(colnames(tableloss2))]
+tableloss2=cbind(Nombre_de_loss=rowSums(tableloss2))
+
+matrix_gainloss2=cbind(tablegain2,tableloss2)
+matrix_gainloss2=cbind(matrix_gainloss2, TotalRow=rowSums(matrix_gainloss2))
+matrix_gainloss2=rbind(matrix_gainloss2, TotalCol=colSums(matrix_gainloss2))
+```
+
+## <span style="color:blue"> Résultats  </span>
+
+```{r, include = TRUE}
+print(matrix_gainloss)
+print(matrix_gainloss2)
+```
+
+## <span style="color:blue"> Comparaison data COUNT (7824) vs data hélène (2544)   </span>
+
+```{r, include = TRUE}
+gainloss_count=data.frame(Gains=colSums(data_count["Gains"]), Losses=colSums(data_count["Losses"]))
+
+#Gainloss sur les 7824 COGs
+print(gainloss_count)
+
+#Gainloss sur les 2544 COGs
+print(matrix_gainloss[4,])
+
+b=(matrix_gainloss[4,])
+
+#Comparaison des deux
+print(gainloss_count/matrix_gainloss[4,])
+```
+
+#### 3.4 x plus de gain avec les COGs non annotés par hélène calculés par COUNT
+
+#### 2.5 x plus de loss avec les COGs non annotés par hélène calculés par COUNT
+
+```{r, include = TRUE}
+#Rapport gain/perte des deux
+#Pour les 7824 COGs
+print(gainloss_count[,1]/gainloss_count[,2])
+
+#Pour les 2544 COGs:
+print(b["Nombre_de_gain"]/b["Nombre_de_loss"])
+```
+
+#### Rapport d'environs 1 gain pour 1 loss pour les 7824
+#### Rapport d'environs 1 gain pour 0.8 loss pour les 2544
+
+
+# <span style="color:red"> Partie 2 : Extraction du nom des COGS gagnés/perdus </span>
+# <span style="color:yellow"> REVOIR CETTE PARTIE (DOUTES) </span>
+
+## <span style="color:blue"> Recherche dans code source de PANSTRIPE </span>
+
+```{r, include = TRUE, message=FALSE, error=FALSE, warning=FALSE}
+phylo.file.name="/home/maarque/Donnees_projet/Data/SAGs_reduits/SAGs_reduits_reroot.nwk"
+rtab.file.name="/home/maarque/Donnees_projet/Data/ALL_SAGS/matrice_binaire_equilibre.tab"
+tree <- read.tree(phylo.file.name)
+pa <- read_rtab(rtab.file.name)
+
+SAGs=c("496N4_C1","521B10_C1","498P15_C1","529C4_C1","495K23_C1","498B22_C2","498C16_C2","529D18_C3","496A2_C3","529J15_C3","518A17_C3","495L20_C3","528N17_C4","498I20_C5","498A3_C8","527L22_C8","520K10_C9","528J8_C9","P9312")
+pa=pa[SAGs,]
+
+# Utilisation de Panstripe
+fit <- panstripe(pa, tree, family="quasipoisson")
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+```
+
+## <span style="color:blue"> Matrice des évènements </span>
+
+```{r, include = TRUE}
+pa <- pa[match(tree$tip.label, rownames(pa)), , drop = FALSE]
+index <- which(apply(pa, 2, function(x) length(unique(x))) > 1)
+anc_states <- do.call(cbind, purrr::map(index, ~{
+            (panstripe:::asr_max_parsimony(tree, pa[, .x] + 
+                1, Nstates = 2)$change[tree$edge[, 2]])}))
+```
+
+##### Ici on a une matrice pour tous les SAGs + les branches
+##### Il semblerait que quand une valeur est différente de 0 on a un évènement (gain ou loss mais pas différencié)
+##### Il semblerait aussi en comparant avec COUNT que quand cet évènement a une valeur inférieure à 0.5 il n'est pas compté.
+
+```{r, include = TRUE}
+table(anc_states[,"COG103771"]>0.5)
+table(anc_states[,"COG1035"]>0.5)
+```
+
+# <span style="color:red"> Partie 3 : Taux de gain/perte par compartiments, clades et fluidité des ilots </span>
+
+## <span style="color:blue"> Taux de gain/perte par clades (donc pour les branches TIP) </span>
+
+```{r, include = TRUE}
+gt$label[20:37]=c("root","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q")
+rownames(anc_states)=c("P9312","A","B","520K10_C9","528J8_C9","C","498I20_C5","D","528N17_C4","E","F","G","498B22_C2","498C16_C2","H","I","498P15_C1","529C4_C1","J","496N4_C1","K","495K23_C1","521B10_C1","L","M","498A3_C8","527L22_C8","N","O","518A17_C3","495L20_C3","P","496A2_C3","Q","529D18_C3","529J15_C3")
+
+variables_COGS <- list()
+
+# Parcours de la matrice
+for (i in 1:nrow(anc_states)) {
+  for (j in 1:ncol(anc_states)) {
+    valeur = anc_states[i, j]
+    if (valeur >= 0.5) {
+      SAG <- colnames(anc_states)[j]
+      COG <- rownames(anc_states)[i]
+      
+      # Vérification si la variable COG existe déjà, sinon la créer
+      if (!(COG %in% names(variables_COGS))) {
+        variables_COGS[[COG]] = c()
+      }
+      
+      # Ajout du SAG à la variable COG
+      variables_COGS[[COG]] = c(variables_COGS[[COG]], SAG)
+    }
+  }
+}
+
+variables_COGS=variables_COGS[order(names(variables_COGS))]
+
+#COGs du clade C1
+COGs_C1=c(variables_COGS[["495K23_C1"]], variables_COGS[["496N4_C1"]], variables_COGS[["498P15_C1"]], variables_COGS[["521B10_C1"]], variables_COGS[["529C4_C1"]])
+COGs_C1=unique(COGs_C1)
+
+#COGs du clade C2
+COGs_C2=c(variables_COGS[["498B22_C2"]], variables_COGS[["498C16_C2"]])
+COGs_C2=unique(COGs_C2)
+
+#COGs du clade C3
+COGs_C3=c(variables_COGS[["495L20_C3"]], variables_COGS[["496A2_C3"]], variables_COGS[["518A17_C3"]], variables_COGS[["529D18_C3"]], variables_COGS[["529J15_C3"]])
+COGs_C3=unique(COGs_C3)
+
+#COGs du clade C4
+COGs_C4=c(variables_COGS[["528N17_C4"]])
+COGs_C4=unique(COGs_C4)
+
+#COGs du clade C5
+COGs_C5=c(variables_COGS[["498I20_C5"]])
+COGs_C5=unique(COGs_C5)
+
+#COGs du clade C8
+COGs_C8=c(variables_COGS[["498A3_C8"]], variables_COGS[["527L22_C8"]])
+COGs_C8=unique(COGs_C8)
+
+#COGs du clade C9
+COGs_C9=c(variables_COGS[["520K10_C9"]], variables_COGS[["528J8_C9"]])
+COGs_C9=unique(COGs_C9)
+```
+
+## <span style="color:blue"> Taux de gain/perte par clades </span>
+
+#### C9
+```{r, include = TRUE}
+C9=data.frame(COG=COGs_C9)
+C9=merge(C9,data_merge_spec[,c(1,4,5)], by="COG")
+
+C8=data.frame(COG=COGs_C8)
+C8=merge(C8,data_merge_spec[,c(1,4,5)], by="COG")
+
+C5=data.frame(COG=COGs_C5)
+C5=merge(C5,data_merge_spec[,c(1,4,5)], by="COG")
+
+C4=data.frame(COG=COGs_C4)
+C4=merge(C4,data_merge_spec[,c(1,4,5)], by="COG")
+
+C3=data.frame(COG=COGs_C3)
+C3=merge(C3,data_merge_spec[,c(1,4,5)], by="COG")
+
+C3=data.frame(COG=COGs_C3)
+C3=merge(C3,data_merge_spec[,c(1,4,5)], by="COG")
+
+C2=data.frame(COG=COGs_C2)
+C2=merge(C2,data_merge_spec[,c(1,4,5)], by="COG")
+
+C1=data.frame(COG=COGs_C1)
+C1=merge(C1,data_merge_spec[,c(1,4,5)], by="COG")
+```
+
+```{r, include = TRUE, message=FALSE, warning=FALSE}
+# Pour gérer des tables qui n'ont pas le même nombre de colonnes : utilisation de dplyr
+library(dplyr)
+```
+
+```{r, include = TRUE}
+TableCompart=as.data.frame(bind_rows(C9=table(C9$compMaj),C8=table(C8$compMaj),C5=table(C5$compMaj),C4=table(C4$compMaj),C3=table(C3$compMaj),C2=table(C2$compMaj),C1=table(C1$compMaj)))
+TableCompart[is.na(TableCompart)]=0
+rownames(TableCompart)=c("C1","C2","C3","C4","C5","C8","C9")
+
+TableGentype=as.data.frame(bind_rows(C9=table(C9$comp),C8=table(C8$comp),C5=table(C5$comp),C4=table(C4$comp),C3=table(C3$comp),C2=table(C2$comp),C1=table(C1$comp)))
+rownames(TableGentype)=c("C1","C2","C3","C4","C5","C8","C9")
+
+print(TableGentype)
+print(TableCompart)
+```
+
+
+

@@ -1,0 +1,44 @@
+---
+title: "16_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-16"
+output: html_document
+---
+
+# <span style="color:red"> Partie 1 : Blast réciproque des génomes de références </span>
+
+## <span style="color:blue"> Création de la DB </span>
+
+```{r, engine='bash', eval=FALSE}
+prots=$(find -name "protein*") ; cat $prots > all_prots
+mmseqs createdb all_prots target_db
+mmseqs createindex target_db tmp --search-type 2
+```
+
+## <span style="color:blue"> Blast des génomes de réf sur la DB </span>
+
+```{r, engine='bash', eval=FALSE}
+mmseqs easy-search all_prots target_db Result tmp --format-output "query,target,evalue,qcov,tcov,pident,qlen,tlen,alnlen"
+```
+
+## <span style="color:blue"> Récupération des 2èmes meilleurs hits (pour ne pas prendre le hit réciproque) </span>
+
+```{r, engine='bash', eval=FALSE}
+# J'ai crée un scrip python pour récupéré le 2e meilleur hit : Script_2nd_besthit.py
+python3 Script_2nd_besthit.py > 2nd_best_hit
+```
+
+## <span style="color:blue"> Différence d'attribution des protéines </span>
+
+```{r, engine='bash', eval=FALSE}
+more Result | awk '{print $2}' | sort | uniq | wc -l
+39703
+
+more all_prots | grep ">" | wc -l
+42121
+
+more all_cds_cogs | wc -l
+34306
+```
+
+

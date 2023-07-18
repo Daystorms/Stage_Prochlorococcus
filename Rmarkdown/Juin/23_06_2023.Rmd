@@ -1,0 +1,404 @@
+---
+title: "23_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-23"
+output: html_document
+---
+
+```{r Packages, message=FALSE, warning=FALSE, include=TRUE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+library(phytools)
+library(rpart)
+library(tidyr)
+library(tibble)
+library(dplyr)
+library(reshape2)
+set.seed(1234)
+```
+
+# <span style="color:red"> Partie 1 : phylogénie en gain/pertes uniquement sur les génomes de référence </span>
+
+## <span style="color:blue"> Importation des données </span>
+
+```{r, include = TRUE, message=FALSE}
+tree_init <- read.tree("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/REROOT_RAxML_bestTree.ALL_concatenated_cogs.nwk")
+pa_init <- read_rtab("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Matrice_fusionnee.tsv")
+```
+
+## <span style="color:blue"> Réduction du jeu de données </span>
+
+```{r, include = TRUE, message=FALSE}
+genrefs=c("P9312","MED4","MIT9215","MIT9301","AS9601","MIT9202","MIT9515","MIT1013","MIT1214","MIT0917","NATL1A","MIT0912","MIT0913","MIT0915","NATL2A","MIT0918","MIT9303","SS120","MIT0919","MIT9211","MIT9313")
+
+tree = KeepTip(tree_init, genrefs, preorder = TRUE)
+pa=pa_init[genrefs,]
+```
+
+## <span style="color:blue"> Utilisation de panstripe </span>
+
+```{r, include = TRUE, message=FALSE}
+fit <- panstripe(pa, tree, family="quasipoisson")
+```
+
+## <span style="color:blue"> Plot du gain/perte </span>
+
+```{r, include = TRUE, message=FALSE}
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+data_x=gt$x
+data_y=gt$y
+data_labels=round(gt$trait)
+
+#Arbre gain/perte qui affiche les gains/pertes de gènes
+plot_gain_loss(fit,tip_label = FALSE)+geom_tiplab(align=TRUE,size=1.2,color="black")+ geom_text(aes(data_x,data_y),label=data_labels, check_overlap = FALSE, color="red", size=1.5,hjust=-0.3,vjust=-0.1)
+```
+
+## <span style="color:blue"> Import de la matrice d’états ancestraux et annotations </span>
+
+```{r, include = TRUE, message=FALSE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Annot_All_COGS.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/COUNT/COUNT_bash/FAMILY.txt", header=T, sep="\t", check.names = F)
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+```
+
+```{r, include = TRUE, message=FALSE}
+pa <- pa[match(tree$tip.label, rownames(pa)), , drop = FALSE]
+index <- which(apply(pa, 2, function(x) length(unique(x))) > 1)
+anc_states <- do.call(cbind, purrr::map(index, ~{
+            (panstripe:::asr_max_parsimony(tree, pa[, .x] + 
+                1, Nstates = 2)$change[tree$edge[, 2]])}))
+
+gt$label[22:41]=c("root",rep(1:19))
+```
+
+## <span style="color:blue"> Attribution des tips a la matrice d'état ancestral </span>
+
+```{r, include = TRUE, message=FALSE}
+SommeRow=rowSums(anc_states)
+
+gt2=gt[,c(4,10)]
+
+# On enlève root
+gt2=gt2[-22,]
+
+new_row_names = character(nrow(anc_states))
+
+for (i in 1:nrow(gt2)) {
+  label = gt2[i, "label"]
+  chiffre = gt2[i, "trait"]
+  for (j in 1:nrow(anc_states)) {
+    if (sum(anc_states[j, ]) == chiffre) {
+      new_row_names[j] = label
+    }
+  }
+}
+
+rownames(anc_states) = new_row_names
+```
+
+## <span style="color:blue"> Attribution des COGS en fonction de la présence ou non d'évènements </span>
+
+```{r, include = TRUE, message=FALSE}
+variables_COGS <- list()
+
+for (i in 1:nrow(anc_states)) {
+  for (j in 1:ncol(anc_states)) {
+    valeur = anc_states[i, j]
+    if (valeur >= 0.5) {
+      SAG=colnames(anc_states)[j]
+      COG=rownames(anc_states)[i]
+      if (!(COG %in% names(variables_COGS))) {
+        variables_COGS[[COG]] = c()
+      }
+      variables_COGS[[COG]] = c(variables_COGS[[COG]], SAG)
+    }
+  }
+}
+
+create_COGs=function(vector, variables_COGS) {
+  COGs=c()
+
+  for (term in vector) {
+    COGs=c(COGs, variables_COGS[[term]])
+  }
+
+  return(COGs)
+}
+
+New_COGS=unique(create_COGs(genrefs,variables_COGS))
+New_COGS=merge(data.frame(COG=New_COGS),data_merge_spec, by="COG")
+
+# table de la ou se produisent les évènements (gains et pertes) pour les génomes de référence
+Table1=table(New_COGS$gentype)
+```
+
+
+
+```{r, include = TRUE, message=FALSE}
+liste_sags=list()
+
+# Parcours des lignes de la matrice
+for (i in 1:nrow(pa)) {
+  # Récupération des indices des colonnes contenant des 1
+  indices=which(pa[i, ] == 1)
+  
+  # Récupération des noms des colonnes correspondantes
+  noms_colonnes=colnames(pa)[indices]
+  noms_sags=rownames(pa)[i]
+  
+  # Ajout des noms des colonnes à la liste pour la SAG actuelle
+  liste_sags[[noms_sags]]=noms_colonnes
+}
+
+New_COGS2=unique(create_COGs(genrefs,liste_sags))
+New_COGS2=merge(data.frame(COG=New_COGS2),data_merge_spec, by="COG")
+
+Table2=table(New_COGS2$gentype)
+
+Comparaison_COGS=Table1/Table2
+```
+
+## <span style="color:blue"> Plots </span>
+
+```{r, include = TRUE, message=FALSE}
+df=data.frame(core = 0.2110701, flex = 0.8286604, multi = 0.5920000)
+
+# Transformer le dataframe en un format approprié pour ggplot2
+df_melted=melt(df)
+
+# Créer le barplot avec les valeurs affichées
+ggplot(df_melted, aes(x = variable, y = value, fill = variable)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = round(value, 2)), vjust = 3, color = "white") +
+  labs(title = "Fluidité des types de génomes des génomes de référence",
+       x = "Type de génome", y = "Fluidité") +
+  scale_fill_manual(values = c("forestgreen", "steelblue", "darkred")) +
+  theme_minimal() +
+  theme(legend.title = element_blank())
+
+
+
+
+```
+
+
+# <span style="color:red"> Partie 2 : phylogénie en gain/pertes sur les génomes de refs + 18 SAGS </span>
+
+## <span style="color:blue"> Réduction du jeu de données </span>
+
+```{r, include = TRUE, message=FALSE}
+genrefs_SAGS=c("P9312","MED4","MIT9215","MIT9301","AS9601","MIT9202","MIT9515","MIT1013","MIT1214","MIT0917","NATL1A","MIT0912","MIT0913","MIT0915","NATL2A","MIT0918","MIT9303","SS120","MIT0919","MIT9211","MIT9313","496N4_C1","521B10_C1","498P15_C1","529C4_C1","495K23_C1","498B22_C2","498C16_C2","529D18_C3","496A2_C3","529J15_C3","518A17_C3","495L20_C3","528N17_C4","498I20_C5","498A3_C8","527L22_C8","520K10_C9","528J8_C9")
+
+tree = KeepTip(tree_init, genrefs_SAGS, preorder = TRUE)
+pa=pa_init[genrefs_SAGS,]
+```
+
+## <span style="color:blue"> Utilisation de panstripe </span>
+
+```{r, include = TRUE, message=FALSE}
+fit <- panstripe(pa, tree, family="quasipoisson")
+```
+
+## <span style="color:blue"> Plot du gain/perte </span>
+
+```{r, include = TRUE, message=FALSE}
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+data_x=gt$x
+data_y=gt$y
+data_labels=round(gt$trait)
+
+#Arbre gain/perte qui affiche les gains/pertes de gènes
+plot_gain_loss(fit,tip_label = FALSE)+geom_tiplab(align=TRUE,size=1.2,color="black")+ geom_text(aes(data_x,data_y),label=data_labels, check_overlap = FALSE, color="red", size=1.5,hjust=-0.3,vjust=-0.1)
+```
+
+
+
+
+
+# <span style="color:red"> Partie 3 : phylogénie en gain/pertes sur les génomes de refs + 59 SAGS </span>
+
+## <span style="color:blue"> Sélection des SAGS avec complétude > 70% </span>
+
+```{r, include = TRUE, message=FALSE}
+tsv_completion=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Completion_SAGs.tsv", sep="\t", check.names = FALSE, header=FALSE)
+tsv_completion=tsv_completion[,c(1,4)]
+colnames(tsv_completion)=c("nom","completion")
+
+# > 70% de complétion
+Compl_70=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 70) {
+    Compl_70 = append(Compl_70, tsv_completion[i, 1])
+  }
+}
+rm(i)
+
+# Ajout des génomes de références avec les 59 SAGS
+Compl_70=c(Compl_70,genrefs)
+
+```
+
+## <span style="color:blue"> Réduction du jeu de données </span>
+
+```{r, include = TRUE, message=FALSE}
+tree = KeepTip(tree_init, Compl_70, preorder = TRUE)
+pa=pa_init[Compl_70,]
+```
+
+## <span style="color:blue"> Utilisation de panstripe </span>
+
+```{r, include = TRUE, message=FALSE}
+fit <- panstripe(pa, tree, family="quasipoisson")
+```
+
+## <span style="color:blue"> Plot du gain/perte </span>
+
+```{r, include = TRUE, message=FALSE}
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+data_x=gt$x
+data_y=gt$y
+data_labels=round(gt$trait)
+
+#Arbre gain/perte qui affiche les gains/pertes de gènes
+plot_gain_loss(fit,tip_label = FALSE)+geom_tiplab(align=TRUE,size=1.2,color="black")+ geom_text(aes(data_x,data_y),label=data_labels, check_overlap = FALSE, color="red", size=1.5,hjust=-0.3,vjust=-0.1)
+```
+
+
+
+
+
+
+# <span style="color:red"> Partie 4 : Essai de panstripe sur un jeu de données très réduit pour voir si l'algorithme fonctionne </span>
+
+## <span style="color:blue"> Réduction du jeu de données </span>
+
+```{r, include = TRUE, message=FALSE}
+SAGS=c("496N4_C1","521B10_C1","498P15_C1","529C4_C1","495K23_C1","498B22_C2","498C16_C2","529D18_C3","496A2_C3","529J15_C3","518A17_C3","495L20_C3")
+
+tree = KeepTip(tree_init, SAGS, preorder = TRUE)
+pa=pa_init[SAGS,]
+```
+
+## <span style="color:blue"> Utilisation de Panstripe </span>
+
+```{r, include = TRUE}
+fit <- panstripe(pa, tree)
+```
+
+
+## <span style="color:blue"> Plots </span>
+
+```{r, include = TRUE}
+plot_pangenome_cumulative(fit)
+plot_pangenome_params(fit)
+```
+
+## <span style="color:blue"> Arbre </span>
+
+```{r, include = TRUE, message=FALSE}
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+data_x=gt$x
+data_y=gt$y
+data_labels=round(gt$trait)
+
+#Arbre gain/perte qui affiche les gains/pertes de gènes
+plot_gain_loss(fit,tip_label = FALSE)+geom_tiplab(align=TRUE,size=1.2,color="black")+ geom_text(aes(data_x,data_y),label=data_labels, check_overlap = FALSE, color="red", size=1.5,hjust=-0.3,vjust=-0.1)
+
+plot_pangenome_params(list(data = fit,data = fit), legend = FALSE) + plot_pangenome_cumulative(list(data = fit,data = fit)) + plot_layout(nrow = 1)
+```
+
+#### Panstripe fonctionne sans family="quasipoisson" mais le plot obtenu a toujours des données très éloignées de ce qui a été obtenu avec les données fournies par panstripe.
+
+
+# <span style="color:red"> Partie 5 : Courbes de pangénome overall + par clades </span>
+
+## <span style="color:blue"> Courbes de pangénome par clades </span>
+
+
+```{r, include = TRUE}
+C1_ALL=c()
+C2_ALL=c()
+C3_ALL=c()
+C4_ALL=c()
+C5_ALL=c()
+C8_ALL=c()
+C9_ALL=c()
+
+# Parcourir les noms de colonnes
+
+for (row_name in row.names(pa_init)) {
+  if (grepl("_C1", row_name)) {
+    C1_ALL=append(C1_ALL,row_name)
+  }
+  if (grepl("_C2", row_name)) {
+    C2_ALL=append(C2_ALL,row_name)
+  }
+  if (grepl("_C3", row_name)) {
+    C3_ALL=append(C3_ALL,row_name)
+    }
+  if (grepl("_C4", row_name)) {
+    C4_ALL=append(C4_ALL,row_name)
+  }
+  if (grepl("_C5", row_name)) {
+    C5_ALL=append(C5_ALL,row_name)
+  }
+  if (grepl("_C8", row_name)) {
+    C8_ALL=append(C8_ALL,row_name)
+  }
+  if (grepl("_C9", row_name)) {
+    C9_ALL=append(C9_ALL,row_name)
+  }
+}
+
+C1_ALL=pa_init[C1_ALL,]
+C2_ALL=pa_init[C2_ALL,]
+C3_ALL=pa_init[C3_ALL,]
+C4_ALL=pa_init[C4_ALL,]
+C5_ALL=pa_init[C5_ALL,]
+C8_ALL=pa_init[C8_ALL,]
+C9_ALL=pa_init[C9_ALL,]
+genrefs_ALL=pa_init[genrefs,]
+
+plot_acc(list(C1=C1_ALL, C2=C2_ALL, C3=C3_ALL, C4=C4_ALL, C5=C5_ALL, C8=C8_ALL, C9=C9_ALL,genrefs=genrefs_ALL))
+```
+
+## <span style="color:blue"> Courbe de pangénome overall </span>
+
+```{r, include = TRUE}
+plot_acc(list(All_Data=pa_init))
+```
+
+## <span style="color:blue"> Courbe de pangénome des génomes de références séparés (HLI, HLII, LL...) </span>
+
+```{r, include = TRUE}
+HLI=c("MED4","MIT9515")
+HLII=c("P9312","MIT9215","AS9601","MIT9202","MIT9301")
+LLI=c("NATL1A","NATL2A","MIT0915","MIT1013","MIT1214","MIT0917","MIT0912","MIT0913")
+LLII_III=c("SS120","MIT9211","MIT0919","MIT0918")
+LLIV=c("MIT9303","MIT9313")
+
+HLI=pa_init[HLI,]
+HLII=pa_init[HLII,]
+LLI=pa_init[LLI,]
+LLII_III=pa_init[LLII_III,]
+LLIV=pa_init[LLIV,]
+
+plot_acc(list(HLI=HLI, HLII=HLII, LLI=LLI, LLII_III=LLII_III, LLIV=LLIV))
+```

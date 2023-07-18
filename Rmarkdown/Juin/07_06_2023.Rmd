@@ -1,0 +1,72 @@
+---
+title: "07_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-07"
+output: html_document
+---
+
+# <span style="color:red"> Suite d'Identification des COGS chez les nouveaux génomes de référence </span>
+
+## <span style="color:blue"> Récupérer le COG le plus représenté  </span>
+
+```{r, engine='bash', eval=FALSE}
+more result_GCF_027359355.1 | awk '{OFS="\t"} { if ($3<1e-5 && $6>0.8) { ratio = ($7 <= $8) ? $9/$7 : $9/$8; if (ratio > 0.75) { print $1,$2,$3,$6,ratio }}}' | cut -d "|" -f1 | sort -k1 | uniq -c
+
+#Fonctionne i guess ?
+more result_GCF_027359355.1 | awk '{OFS="\t"} { if ($3<1e-5 && $6>0.8) { ratio = ($7 <= $8) ? $9/$7 : $9/$8; if (ratio > 0.75) { print $1,$2,$3,$6,ratio }}}' | cut -d "|" -f1 | sort -k1 | uniq -c | awk '{count[$2]++; if (count[$2] > maxCount[$2]) {maxCount[$2] = count[$2]; maxValue[$2] = $3}} END {for (key in maxCount) print key, maxValue[key]}'
+```
+
+#### Sur le GenREF "result_GCF_027359355.1" ça donne 104 COGS (ça m'a l'air peu même si ils sont en unique)
+
+
+## <span style="color:blue"> Automatisation pour le faire sur tous les fichiers  </span>
+
+```{r, engine='bash', eval=FALSE}
+
+for file in result_GCF_*.1; do output_file="CDS_COGS/COGS_$(basename "$file" | cut -d'.' -f1).txt"; awk '{OFS="\t"} { if ($3<1e-5 && $6>0.8) { ratio = ($7 <= $8) ? $9/$7 : $9/$8; if (ratio > 0.75) { print $1,$2,$3,$6,ratio }}}' "$file" | cut -d "|" -f1 | sort -k1 | uniq -c | awk '{count[$2]++; if (count[$2] > maxCount[$2]) {maxCount[$2] = count[$2]; maxValue[$2] = $3}} END {for (key in maxCount) print key, maxValue[key]}' > "$output_file"; done
+
+# Création d'un fichier Data_overview qui résume les résultats
+for file in COGS_result_*; do count=$(wc -l < "$file"); base=$(basename "$file" .txt); echo -e "$count\t$file\tGCF_$(echo "$base" | awk -F '_' '{print $4}')"; done | sort -k1 -n -r > Overview
+
+join -1 3 -2 1 -t $'\t' <(sort -k3 Overview) <(sort -k1 Correspondance_RefSeq_Strain) | sort -k2 -n -r | awk '{OFS="\t"} {print $2,$4,$1,$3}'> Data_overview
+
+```
+
+#### Output dans le fichier "CDS_COGS"
+
+## <span style="color:blue"> Fichier Data_overview reprend le nombre de COGs  </span>
+
+```{r, engine='bash', eval=FALSE}
+
+1852	MIT9215	GCF_000018065	COGS_result_GCF_000018065.txt
+1838	MED4	GCF_000011465	COGS_result_GCF_000011465.txt
+1824	MIT9301	GCF_000015965	COGS_result_GCF_000015965.txt
+1822	MIT9202	GCF_000158595	COGS_result_GCF_000158595.txt
+1821	AS9601	GCF_000015645	COGS_result_GCF_000015645.txt
+1809	MIT9312	GCF_000012645	COGS_result_GCF_000012645.txt
+1792	MIT9515	GCF_000015665	COGS_result_GCF_000015665.txt
+107	MIT0912	GCF_027359595	COGS_result_GCF_027359595.txt
+105	NATL2A	GCF_000012465	COGS_result_GCF_000012465.txt
+104	MIT1214	GCF_027359355	COGS_result_GCF_027359355.txt
+102	MIT0913	GCF_027359525	COGS_result_GCF_027359525.txt
+100	MIT0917	GCF_027359575	COGS_result_GCF_027359575.txt
+100	MIT1013	GCF_027359395	COGS_result_GCF_027359395.txt
+96	NATL1A	GCF_000015685	COGS_result_GCF_000015685.txt
+94	MIT0915	GCF_027359475	COGS_result_GCF_027359475.txt
+90	MIT0918	GCF_027359415	COGS_result_GCF_027359415.txt
+79	SS120	GCF_000007925	COGS_result_GCF_000007925.txt
+72	MIT0919	GCF_027359375	COGS_result_GCF_027359375.txt
+70	MIT9211	GCF_000018585	COGS_result_GCF_000018585.txt
+10	MIT9313	GCF_000011485	COGS_result_GCF_000011485.txt
+7	MIT9303	GCF_000015705	COGS_result_GCF_000015705.txt
+
+```
+
+
+
+
+
+
+
+
+

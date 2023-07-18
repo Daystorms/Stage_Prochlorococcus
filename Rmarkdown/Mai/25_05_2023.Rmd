@@ -1,0 +1,212 @@
+---
+title: "25-05-2023"
+author: "ARQUE Maxime"
+date: "2023-05-25"
+output: html_document
+---
+
+```{r Packages, message=FALSE, warning=FALSE, include=TRUE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+set.seed(1234)
+```
+
+
+
+## <span style="color:blue"> Ajout équation de droite sur nuages de points + calcul R²  sur scripts du 22_05 et 23_05 </span>
+
+# <span style="color:red"> Courbes d'accumulation </span>
+
+## <span style="color:blue"> Entre les différents clades pour les 18 SAGs  </span>
+
+```{r, include = TRUE, message=FALSE}
+rtab.file.name="/home/maarque/Donnees_projet/Data/SAGs_reduits/matrix_SAGs_reduits.tab"
+pa <- read_rtab(rtab.file.name)
+
+C1=pa[c("496N4_C1","521B10_C1","498P15_C1","529C4_C1","495K23_C1"),]
+C2=pa[c("498B22_C2","498C16_C2"),]
+C3=pa[c("529D18_C3","496A2_C3","529J15_C3","518A17_C3","495L20_C3"),]
+C4=pa[c("528N17_C4"),]
+C5=pa[c("498I20_C5"),]
+C8=pa[c("498A3_C8","527L22_C8"),]
+C9=pa[c("520K10_C9","528J8_C9"),]
+
+plot_acc(list(C1=C1, C2=C2, C3=C3, C8=C8, C9=C9))
+```
+
+<br>
+
+#### Comme C4 et C5 ne contiennent qu'un seul SAG il n'est pas possible de tracer une courbe d'accumulation pour ces deux clades.
+
+## <span style="color:blue"> Entre les différents clades pour les 87 SAGs  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+rtab.file.name="/home/maarque/Donnees_projet/Data/ALL_SAGS/matrice_binaire_equilibre.tab"
+pa <- read_rtab(rtab.file.name)
+
+
+C1_ALL=c()
+C2_ALL=c()
+C3_ALL=c()
+C4_ALL=c()
+C5_ALL=c()
+C8_ALL=c()
+C9_ALL=c()
+
+# Parcourir les noms de colonnes
+
+for (row_name in row.names(pa)) {
+  if (grepl("_C1", row_name)) {
+    C1_ALL=append(C1_ALL,row_name)
+  }
+  if (grepl("_C2", row_name)) {
+    C2_ALL=append(C2_ALL,row_name)
+  }
+  if (grepl("_C3", row_name)) {
+    C3_ALL=append(C3_ALL,row_name)
+    }
+  if (grepl("_C4", row_name)) {
+    C4_ALL=append(C4_ALL,row_name)
+  }
+  if (grepl("_C5", row_name)) {
+    C5_ALL=append(C5_ALL,row_name)
+  }
+  if (grepl("_C8", row_name)) {
+    C8_ALL=append(C8_ALL,row_name)
+  }
+  if (grepl("_C9", row_name)) {
+    C9_ALL=append(C9_ALL,row_name)
+  }
+}
+
+C1_ALL=pa[C1_ALL,]
+C2_ALL=pa[C2_ALL,]
+C3_ALL=pa[C3_ALL,]
+C4_ALL=pa[C4_ALL,]
+C5_ALL=pa[C5_ALL,]
+C8_ALL=pa[C8_ALL,]
+C9_ALL=pa[C9_ALL,]
+
+plot_acc(list(C1=C1_ALL, C2=C2_ALL, C3=C3_ALL, C4=C4_ALL, C5=C5_ALL, C8=C8_ALL, C9=C9_ALL))
+
+
+```
+
+## <span style="color:blue"> Entre les différents niveaux de complétion pour les 87 SAGs  </span>
+
+```{r, include = TRUE}
+tsv_completion=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Completion_SAGs.tsv", sep="\t", check.names = FALSE, header=FALSE)
+tsv_completion=tsv_completion[,c(1,4)]
+colnames(tsv_completion)=c("nom","completion")
+
+# > 90% de complétion
+Compl_90=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 90) {
+    Compl_90 = append(Compl_90, tsv_completion[i, 1])
+  }
+}
+
+# > 80% de complétion
+Compl_80=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 80) {
+    Compl_80 = append(Compl_80, tsv_completion[i, 1])
+  }
+}
+
+
+# > 70% de complétion
+Compl_70=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 70) {
+    Compl_70 = append(Compl_70, tsv_completion[i, 1])
+  }
+}
+
+# > 60% de complétion
+Compl_60=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 60) {
+    Compl_60 = append(Compl_60, tsv_completion[i, 1])
+  }
+}
+
+# > 50% de complétion
+Compl_50=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 50) {
+    Compl_50 = append(Compl_50, tsv_completion[i, 1])
+  }
+}
+
+# > 40% de complétion
+Compl_40=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 40) {
+    Compl_40 = append(Compl_40, tsv_completion[i, 1])
+  }
+}
+
+# > 30% de complétion
+Compl_30=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 30) {
+    Compl_30 = append(Compl_30, tsv_completion[i, 1])
+  }
+}
+
+# > 20% de complétion
+Compl_20=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 20) {
+    Compl_20 = append(Compl_20, tsv_completion[i, 1])
+  }
+}
+
+# > 10% de complétion
+Compl_10=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 10) {
+    Compl_10 = append(Compl_10, tsv_completion[i, 1])
+  }
+}
+
+
+Compl_90=pa[Compl_90,]
+Compl_80=pa[Compl_80,]
+Compl_70=pa[Compl_70,]
+Compl_60=pa[Compl_60,]
+Compl_50=pa[Compl_50,]
+Compl_40=pa[Compl_40,]
+Compl_30=pa[Compl_30,]
+Compl_20=pa[Compl_20,]
+Compl_10=pa[Compl_10,]
+
+plot_acc(list(Compl_90=Compl_90, Compl_80=Compl_80, Compl_70=Compl_70, Compl_60=Compl_60, Compl_50=Compl_50, Compl_40=Compl_40, Compl_30=Compl_30, Compl_20=Compl_20,Compl_10=Compl_10))
+
+
+```
+
+## <span style="color:blue"> Conclusion vis-à-vis des résultats  </span>
+
+##### Il semblerait que pour la courbe d'accumulation en fonction des différents clades, l'accessory size évolue à peu près de la même manière indépendamment des clades.
+
+##### Pour la courbe d'accumulation en fonction des différents niveaux de complétions (supérieur à 90%, 80%, 70% ...) ils suivent encore une fois tous la même allure, ce qui traduit le fait que les différents niveaux de complétion n'ont pas d'impact même pour des niveaux de complétion faibles (10,20,30..)
+
+
+

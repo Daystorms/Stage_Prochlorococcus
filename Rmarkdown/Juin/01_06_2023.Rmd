@@ -1,0 +1,89 @@
+---
+title: "01_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-01"
+output: html_document
+---
+
+```{r Packages, message=FALSE, warning=FALSE, include=TRUE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+library(phytools)
+library(rpart)
+library(tidyr)
+library(tibble)
+set.seed(1234)
+```
+
+## <span style="color:blue"> J'ai continué la comparaison fluidité sur le script du 31_05_2023 </span>
+
+#### Vis-à-vis des résultats des plots, les résultats ne semble pas correspondre avec les résultats d'hélène (fluidité en fonction du gentype). Flex est sous représenté alors que normalement il ne devrait pas l'être. C'est potentiellement dû au fait qu'on utilise un jeu de données réduit ? Les 18 ne seraient pas suffisants pour fournir une quantité COGs flex représentative.
+
+#### Pour la fluidité des compartiments, on a pas la même fluidité d'un sous clade à un autre. Les données pourraient être encore une fois biaisées vis-à-vis du fait que pour certains clades, avec le jeu de données réduit ils ne sont composés que d'un seul SAG. Valeur de fluidité "Comp" globalement assez élevée chez tous les clades. 
+
+#### --> Refaire l'essai comme on en avait parlé en rajouté des SAGs au fur et à mesure en fonction des niveaux de complétion. 
+
+
+## <span style="color:blue"> SAGs en fonction du complétude % </span>
+
+```{r, include = TRUE}
+tsv_completion=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Completion_SAGs.tsv", sep="\t", check.names = FALSE, header=FALSE)
+tsv_completion=tsv_completion[,c(1,4)]
+colnames(tsv_completion)=c("nom","completion")
+
+# > 80% de complétion
+Compl_80=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 80) {
+    Compl_80 = append(Compl_80, tsv_completion[i, 1])
+  }
+}
+
+# > 70% de complétion
+Compl_70=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 70) {
+    Compl_70 = append(Compl_70, tsv_completion[i, 1])
+  }
+}
+
+# > 60% de complétion
+Compl_60=c()
+
+for (i in 1:nrow(tsv_completion)) {
+  if (tsv_completion[i, 2] > 60) {
+    Compl_60 = append(Compl_60, tsv_completion[i, 1])
+  }
+}
+
+print(length(Compl_80))
+print(Compl_80)
+
+print(length(Compl_70))
+print(Compl_70)
+
+print(length(Compl_60))
+print(Compl_60)
+
+
+```
+
+## <span style="color:blue"> Conclusion </span>
+
+#### Au vue des données, il semble plus logique de définir un seuil de complétion de 70% pour avoir un bon compromis entre complétion et nombre de SAGs représentés par clades. Avec 70% on a 59 SAGs et au minimum 2 SAGs par clades (contrairement a 1 par clades pour le jeu de donnée des 18 SAGs). Si on voulait rajouter plus de SAGs par clades il faudrait descendre à environs 20-30% de complétude ce qui pour le coup serait trop problématique. 
+
+
+
+
+
+
+
+
+

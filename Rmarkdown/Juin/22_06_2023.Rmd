@@ -1,0 +1,55 @@
+---
+title: "22_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-22"
+output: html_document
+---
+
+```{r Packages, message=FALSE, warning=FALSE, include=TRUE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+library(phytools)
+library(rpart)
+library(tidyr)
+library(tibble)
+library(dplyr)
+set.seed(1234)
+```
+
+# <span style="color:red"> Partie 1 : utilisation de panstripe sur les 108 génomes </span>
+
+## <span style="color:blue"> Importation de l'arbre et de la matrice de gains/pertes </span>
+
+```{r, include = TRUE, message=FALSE}
+tree <- read.tree("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/RAxML_bestTree.ALL_concatenated_cogs.nwk")
+pa <- read_rtab("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Matrice_fusionnee.tsv")
+```
+
+## <span style="color:blue"> Plots de pangénome </span>
+
+```{r, include = TRUE, message=FALSE}
+fit <- panstripe(pa, tree, family="quasipoisson")
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+plot_pangenome_params(fit)
+plot_pangenome_cumulative(fit)
+```
+
+## <span style="color:blue"> Plot PANSTRIPE des gains et pertes sur l'arbre </span>
+
+```{r, include = TRUE, message=FALSE}
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+data_x=gt$x
+data_y=gt$y
+data_labels=round(gt$trait)
+
+plot_gain_loss(fit,tip_label = FALSE)+geom_tiplab(align=TRUE,size=1.2,color="black")+ geom_text(aes(data_x,data_y),label=data_labels, check_overlap = FALSE, color="red", size=2,hjust=-0.5,vjust=-0.3)
+
+```
+

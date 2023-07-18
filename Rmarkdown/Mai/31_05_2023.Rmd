@@ -1,0 +1,257 @@
+---
+title: "31_05_2023"
+author: "ARQUE Maxime"
+date: "2023-05-31"
+output: html_document
+---
+
+```{r Packages, message=FALSE, warning=FALSE, include=TRUE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+library(phytools)
+library(rpart)
+library(tidyr)
+library(tibble)
+set.seed(1234)
+```
+
+# <span style="color:red"> Partie 1 : Comparaison des COGs qui ont subis un évènement en fonction des COGs présents : Fluidité des ilots
+
+## <span style="color:blue"> Import des données de panstripe </span>
+```{r, include = TRUE, message=FALSE, error=FALSE, warning=FALSE}
+phylo.file.name="/home/maarque/Donnees_projet/Data/SAGs_reduits/SAGs_reduits_reroot.nwk"
+rtab.file.name="/home/maarque/Donnees_projet/Data/ALL_SAGS/matrice_binaire_equilibre.tab"
+tree <- read.tree(phylo.file.name)
+pa <- read_rtab(rtab.file.name)
+
+SAGs=c("496N4_C1","521B10_C1","498P15_C1","529C4_C1","495K23_C1","498B22_C2","498C16_C2","529D18_C3","496A2_C3","529J15_C3","518A17_C3","495L20_C3","528N17_C4","498I20_C5","498A3_C8","527L22_C8","520K10_C9","528J8_C9","P9312")
+pa=pa[SAGs,]
+
+# Utilisation de Panstripe
+fit <- panstripe(pa, tree, family="quasipoisson")
+gt <- dplyr::full_join(ggtree::fortify(fit$tree), data.frame(node = fit$tree$edge[,2], trait = fit$data$acc), by = "node")
+
+```
+
+## <span style="color:blue"> Import de la matrice état ancestraux </span>
+```{r, include = TRUE}
+pa <- pa[match(tree$tip.label, rownames(pa)), , drop = FALSE]
+index <- which(apply(pa, 2, function(x) length(unique(x))) > 1)
+anc_states <- do.call(cbind, purrr::map(index, ~{
+            (panstripe:::asr_max_parsimony(tree, pa[, .x] + 
+                1, Nstates = 2)$change[tree$edge[, 2]])}))
+```
+
+## <span style="color:blue"> Import des données des annotations d'Hélène </span>
+
+```{r, include = TRUE}
+raw_data=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Data_count/Count_BASH/family.txt", header=T, sep="\t", check.names = F)
+
+data_count=raw_data[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/Data_GARDON/Annotation_COGs/All_COGS_max.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+```
+
+## <span style="color:blue"> Attribution des branches et labels aux état ancestraux </span>
+
+```{r, include = TRUE}
+gt$label[20:37]=c("root","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q")
+rownames(anc_states)=c("P9312","A","B","520K10_C9","528J8_C9","C","498I20_C5","D","528N17_C4","E","F","G","498B22_C2","498C16_C2","H","I","498P15_C1","529C4_C1","J","496N4_C1","K","495K23_C1","521B10_C1","L","M","498A3_C8","527L22_C8","N","O","518A17_C3","495L20_C3","P","496A2_C3","Q","529D18_C3","529J15_C3")
+```
+
+## <span style="color:blue"> Attribution des évènements des COGs (>0.5 sur panstripe) en fonction des clades </span>
+
+```{r, include = TRUE}
+variables_COGS <- list()
+
+# Parcours de la matrice
+for (i in 1:nrow(anc_states)) {
+  for (j in 1:ncol(anc_states)) {
+    valeur = anc_states[i, j]
+    if (valeur >= 0.5) {
+      SAG <- colnames(anc_states)[j]
+      COG <- rownames(anc_states)[i]
+      
+      # Vérification si la variable COG existe déjà, sinon la créer
+      if (!(COG %in% names(variables_COGS))) {
+        variables_COGS[[COG]] = c()
+      }
+      
+      # Ajout du SAG à la variable COG
+      variables_COGS[[COG]] = c(variables_COGS[[COG]], SAG)
+    }
+  }
+}
+
+variables_COGS=variables_COGS[order(names(variables_COGS))]
+
+#COGs du clade C1
+COGs_C1=c(variables_COGS[["495K23_C1"]], variables_COGS[["496N4_C1"]], variables_COGS[["498P15_C1"]], variables_COGS[["521B10_C1"]], variables_COGS[["529C4_C1"]])
+COGs_C1=unique(COGs_C1)
+
+#COGs du clade C2
+COGs_C2=c(variables_COGS[["498B22_C2"]], variables_COGS[["498C16_C2"]])
+COGs_C2=unique(COGs_C2)
+
+#COGs du clade C3
+COGs_C3=c(variables_COGS[["495L20_C3"]], variables_COGS[["496A2_C3"]], variables_COGS[["518A17_C3"]], variables_COGS[["529D18_C3"]], variables_COGS[["529J15_C3"]])
+COGs_C3=unique(COGs_C3)
+
+#COGs du clade C4
+COGs_C4=c(variables_COGS[["528N17_C4"]])
+COGs_C4=unique(COGs_C4)
+
+#COGs du clade C5
+COGs_C5=c(variables_COGS[["498I20_C5"]])
+COGs_C5=unique(COGs_C5)
+
+#COGs du clade C8
+COGs_C8=c(variables_COGS[["498A3_C8"]], variables_COGS[["527L22_C8"]])
+COGs_C8=unique(COGs_C8)
+
+#COGs du clade C9
+COGs_C9=c(variables_COGS[["520K10_C9"]], variables_COGS[["528J8_C9"]])
+COGs_C9=unique(COGs_C9)
+```
+
+## <span style="color:blue"> Ajout des annotations d'hélène à ces COGs </span>
+
+```{r, include = TRUE}
+C9=data.frame(COG=COGs_C9)
+C9=merge(C9,data_merge_spec, by="COG")
+
+C8=data.frame(COG=COGs_C8)
+C8=merge(C8,data_merge_spec, by="COG")
+
+C5=data.frame(COG=COGs_C5)
+C5=merge(C5,data_merge_spec, by="COG")
+
+C4=data.frame(COG=COGs_C4)
+C4=merge(C4,data_merge_spec, by="COG")
+
+C3=data.frame(COG=COGs_C3)
+C3=merge(C3,data_merge_spec, by="COG")
+
+C3=data.frame(COG=COGs_C3)
+C3=merge(C3,data_merge_spec, by="COG")
+
+C2=data.frame(COG=COGs_C2)
+C2=merge(C2,data_merge_spec, by="COG")
+
+C1=data.frame(COG=COGs_C1)
+C1=merge(C1,data_merge_spec, by="COG")
+```
+
+
+## <span style="color:blue"> Création des tables de comparaison </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE}
+# Pour gérer des tables qui n'ont pas le même nombre de colonnes : utilisation de dplyr
+library(dplyr)
+```
+
+```{r, include = TRUE}
+TableCompart=as.data.frame(bind_rows(C9=table(C9$compartiment),C8=table(C8$compartiment),C5=table(C5$compartiment),C4=table(C4$compartiment),C3=table(C3$compartiment),C2=table(C2$compartiment),C1=table(C1$compartiment)))
+TableCompart[is.na(TableCompart)]=0
+rownames(TableCompart)=c("C1","C2","C3","C4","C5","C8","C9")
+
+TableGentype=as.data.frame(bind_rows(C9=table(C9$gentype),C8=table(C8$gentype),C5=table(C5$gentype),C4=table(C4$gentype),C3=table(C3$gentype),C2=table(C2$gentype),C1=table(C1$gentype)))
+rownames(TableGentype)=c("C1","C2","C3","C4","C5","C8","C9")
+
+print(TableGentype)
+print(TableCompart)
+```
+
+# <span style="color:red"> Partie 2 : Fluidité des ilots </span>
+
+## <span style="color:blue"> Attribution de tous les COGs présents en fonction des clades </span>
+
+```{r, include = TRUE}
+liste_compartiments <- split(data_compartiments$COG, data_compartiments$compartiment)
+```
+
+## <span style="color:blue"> Attribution en fonction des différents clades </span>
+
+```{r, include = TRUE}
+Comparaison_compart=data.frame(TableCompart$Ambiguous/length(liste_compartiments$Ambiguous),
+                               TableCompart$Backbone/length(liste_compartiments$Backbone),
+                               TableCompart$comp/length(liste_compartiments$comp),
+                               TableCompart$ISL1/length(liste_compartiments$ISL1),
+                               TableCompart$ISL2/length(liste_compartiments$ISL2),
+                               TableCompart$ISL3/length(liste_compartiments$ISL3),
+                               TableCompart$ISL4/length(liste_compartiments$ISL4),
+                               TableCompart$ISL5/length(liste_compartiments$ISL5)
+                               )
+Comparaison_compart=Comparaison_compart[,c(2,4,6,8,10,12,14,16)]
+rownames(Comparaison_compart)=c("C1","C2","C3","C4","C5","C8","C9")
+colnames(Comparaison_compart)=c("Ambiguous","Backbone","Comp","ISL1","ISL2","ISL3","ISL4","ISL5")
+Comparaison_compart=rbind(Comparaison_compart,All_Clades=colMeans(Comparaison_compart))
+
+print(Comparaison_compart)
+```
+
+## <span style="color:blue"> Plot de la fluidité des compartiments </span>
+
+```{r, include = TRUE}
+Fluid_Compart <- as.data.frame(Comparaison_compart) %>%
+  rownames_to_column(var = "Compartiment") %>%
+  gather(key = "Variable", value = "Valeur", -Compartiment)
+
+ggplot(Fluid_Compart, aes(x = Compartiment, y = Valeur, fill = Variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Compartiment", y = "Valeur", fill = "Variable") +
+  theme_minimal()
+
+ggplot(Fluid_Compart, aes(x = Compartiment, y = Valeur, fill = Variable, group=Compartiment)) +
+    geom_point(shape=21, size=3) + geom_line(aes(group=Variable, color=Variable)) +
+    labs(x = "Clades", y = "Valeur", color = "Variable") +
+    theme_minimal()
+
+```
+
+## <span style="color:blue"> Fluidité en fonction du type de génome </span>
+
+```{r, include = TRUE}
+liste_gentype <- split(data_compartiments$COG, data_compartiments$gentype)
+
+Comparaison_gentype=data.frame(TableGentype$core/length(liste_gentype$core),
+                               TableGentype$flex/length(liste_gentype$flex),
+                               TableGentype$multi/length(liste_gentype$multi))
+
+Comparaison_gentype=Comparaison_gentype[,c(2,4,6)]
+rownames(Comparaison_gentype)=c("C1","C2","C3","C4","C5","C8","C9")
+colnames(Comparaison_gentype)=c("core","flex","multi")
+
+Comparaison_gentype=rbind(Comparaison_gentype,All_Clades=colMeans(Comparaison_gentype))
+
+print(Comparaison_gentype)
+
+```
+
+## <span style="color:blue"> Plot fluidité en fonction du type de génome </span>
+
+```{r, include = TRUE}
+Fluid_Gentype <- as.data.frame(Comparaison_gentype) %>%
+  rownames_to_column(var = "Compartiment") %>%
+  gather(key = "Variable", value = "Valeur", -Compartiment)
+
+ggplot(Fluid_Gentype, aes(x = Compartiment, y = Valeur, fill = Variable)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Compartiment", y = "Valeur", fill = "Variable") +
+  theme_minimal()
+
+ggplot(Fluid_Gentype, aes(x = Compartiment, y = Valeur, fill = Variable, group=Compartiment)) +
+    geom_point(shape=21, size=3) + geom_line(aes(group=Variable, color=Variable)) +
+    labs(x = "Clades", y = "Valeur", color = "Variable") +
+    theme_minimal()
+
+```

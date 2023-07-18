@@ -1,0 +1,106 @@
+---
+title: "13_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-13"
+output: html_document
+---
+
+## <span style="color:blue"> Importation des librairies </span>
+
+```{r, include=TRUE, message=FALSE, error=FALSE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+library(phytools)
+library(rpart)
+library(tidyr)
+library(tibble)
+set.seed(1234)
+```
+
+## <span style="color:blue"> Identification des COGS non compris dans l'analyse + identification core/flex </span>
+
+```{r, include=TRUE}
+data_diff=read.csv("/home/maarque/Donnees_projet/Data/Comparaison_COGS/COGS_diffs", header=F)
+colnames(data_diff)="COGS"
+
+annot=read.csv("/home/maarque/Donnees_projet/Data/Data_GARDON/Annotation_COGs/All_COGS_max.tsv", sep="\t", header=F)
+colnames(annot)=c("COGS","singmult","coreflex","shared","comp")
+
+annot[,1]=sub("COG","",annot[,1])
+newtab=merge.data.frame(data_diff, annot, by="COGS", all=F)
+
+# Table flexcore de la différence totale entre hélène et moi
+table(newtab$coreflex)
+
+# Liste des cogs core différentiels 
+cat(newtab$COGS[newtab$coreflex=="core"])
+```
+
+## <span style="color:blue"> Identification des COGS compris dans l'analyse + identification core/flex </span>
+
+```{r, include=TRUE}
+data_common=read.csv("/home/maarque/Donnees_projet/Data/Comparaison_COGS/COGS_communs", header=F)
+colnames(data_common)="COGS"
+newtab_common=merge.data.frame(data_common, annot, by="COGS", all=F)
+
+print(table(newtab_common$coreflex))
+cat("1 COG flex : ",newtab_common$COGS[newtab_common$coreflex=="flex"])
+
+```
+
+## <span style="color:blue"> Identification des COGS des HMM </span>
+
+```{r, include=TRUE}
+COGs_compa=read.csv("/home/maarque/Donnees_projet/Data/Comparaison_COGS/COGS_compa", header=F, sep=" ")
+COGs_compa=t(COGs_compa)
+colnames(COGs_compa)="COGS"
+
+HMM_compa=read.csv("/home/maarque/Donnees_projet/Data/Comparaison_COGS/HMM_compa", header=F, sep=" ")
+HMM_compa=t(HMM_compa)
+colnames(HMM_compa)="COGS"
+
+HMM_compa=merge.data.frame(HMM_compa, annot, by="COGS", all=F)
+COGs_compa=merge.data.frame(COGs_compa, annot, by="COGS", all=F)
+
+print(table(HMM_compa$coreflex))
+print(table(COGs_compa$coreflex))
+
+diff=setdiff(HMM_compa$COGS,COGs_compa$COGS)
+cat(diff)
+```
+
+
+## <span style="color:blue"> Réduction de l'arbre pour avoir uniquement les 88 SAGS </span>
+
+#### Le but c'est de voir si en gardant les 88 séquences on retombe sur l'arbre initial d'hélène.
+
+```{r, engine='bash', eval=FALSE}
+cat concatenated_cogs.fna | awk '!/MIT9215|MED4|MIT9301|MIT9202|AS9601|MIT9312|MIT9515|MIT0912|NATL2A|MIT1214|MIT0913|MIT0917|MIT1013|NATL1A|MIT0915|MIT0918|SS120|MIT0919|MIT9211|MIT9313|MIT9303/' RS=">" ORS=">" > align_reduit ; awk -i inplace '!/^>$/ || NR==1' align_reduit
+
+sed -i 's/N/-/g' align_reduit
+```
+
+## <span style="color:blue"> Nouveaux arbres </span>
+
+```{r, eval=FALSE}
+# Un pour raxML avec all SAGS + genrefs avec des "----" à la place des "NNNNN" pour voir si impact des "NNNN".
+raxmlHPC -s concatenated_cogs_no_N.fna  -n treeNo_N -m GTRGAMMA -p 1
+
+# Un pour fastTree avec le jeu de données réduit + des "----" pour voir si les clades se repositionnent
+FastTree -gtr -nt align_reduit > Arbre_reduit
+```
+
+## <span style="color:blue"> Voir si dans le all-pop.fa y'a les COGS manquants </span>
+
+```{r, eval=FALSE}
+more all-pop.fa | grep ">" | cut -d "|" -f1 | cut -d "_" -f2 | sort | uniq -c | grep "914"
+```
+
+#### Réponse = non
+
+

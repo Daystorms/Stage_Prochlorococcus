@@ -1,0 +1,201 @@
+---
+title: "06_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-06"
+output: html_document
+---
+
+# <span style="color:red"> Identification des COGS chez les nouveaux génomes de référence </span>
+
+## <span style="color:blue"> Création de la databse </span>
+
+```{r, engine='bash', eval=FALSE}
+mmseqs createdb db.fasta target_db
+mmseqs createindex target_db tmp --search-type 3
+
+files=$(find -name "cds_from*")
+
+for file in $files ; do name=$(echo "$file" | awk -F'/' '{print $3}') ; mmseqs easy-search "$file" target_db "result_${name}" tmp --format-output "query,target,evalue,qcov,tcov,pident,qlen,tlen,alnlen" ; done
+
+# Format de sortie : query ; target; evalue ; querycoverage ; targetcoverage ; percentage of identical matches ; query length ; target length ; alignement length
+
+```
+
+## <span style="color:blue"> Sélection des COGS avec E-value < 1.e-5 / < 80% identity /  < 75% length </span>
+
+```{r, engine='bash', eval=FALSE}
+more result_GCF_027359355.1 | cut -d "|" -f1 | sort  | uniq -c
+
+more result_GCF_027359355.1 | awk '{OFS="\t"} { if ($3<1e-5 && $6>0.8) { ratio = ($7 <= $8) ? $9/$7 : $9/$8; if (ratio > 0.75) { print $1,$2,$3,$6,ratio }}}'
+
+more result_GCF_027359355.1 | awk '{OFS="\t"} { if ($3<1e-5 && $6>0.8) { ratio = ($7 <= $8) ? $9/$7 : $9/$8; if (ratio > 0.75) { print $1,$2,$3,$6,ratio }}}' | cut -d "|" -f1 | sort -k1 | uniq -c
+```
+
+## <span style="color:blue"> Liste de sortie :  </span>
+
+```{r, engine='bash', eval=FALSE}
+     15 NZ_CP114777.1_cds_WP_011125327.1_1074	237
+     43 NZ_CP114777.1_cds_WP_011125327.1_456	237
+     40 NZ_CP114777.1_cds_WP_011125327.1_687	237
+      1 NZ_CP114777.1_cds_WP_011125327.1_687	61071
+      2 NZ_CP114777.1_cds_WP_011125327.1_687	67681
+      3 NZ_CP114777.1_cds_WP_011125758.1_1118	203
+     79 NZ_CP114777.1_cds_WP_011130577.1_2074	1385
+      5 NZ_CP114777.1_cds_WP_011294133.1_1672	101149
+      2 NZ_CP114777.1_cds_WP_011294133.1_1672	67536
+      1 NZ_CP114777.1_cds_WP_011294151.1_1690	70454
+      2 NZ_CP114777.1_cds_WP_011294173.1_1711	68933
+    104 NZ_CP114777.1_cds_WP_011294225.1_1763	161
+      1 NZ_CP114777.1_cds_WP_011294225.1_1763	67327
+    104 NZ_CP114777.1_cds_WP_011294225.1_816	161
+      1 NZ_CP114777.1_cds_WP_011294225.1_816	67327
+      5 NZ_CP114777.1_cds_WP_011294251.1_1789	2260
+     18 NZ_CP114777.1_cds_WP_011294252.1_1791	3068
+      3 NZ_CP114777.1_cds_WP_011294293.1_1832	49430
+     61 NZ_CP114777.1_cds_WP_011294336.1_1874	3707
+      7 NZ_CP114777.1_cds_WP_011294336.1_1874	58164
+     67 NZ_CP114777.1_cds_WP_011294385.1_1946	1
+     91 NZ_CP114777.1_cds_WP_011294514.1_2079	451
+      3 NZ_CP114777.1_cds_WP_011294533.1_474	237
+      7 NZ_CP114777.1_cds_WP_011294856.1_859	230
+      2 NZ_CP114777.1_cds_WP_011294856.1_859	68888
+     39 NZ_CP114777.1_cds_WP_011295453.1_1252	39515
+     24 NZ_CP114777.1_cds_WP_011295528.1_1327	1084
+     84 NZ_CP114777.1_cds_WP_011295529.1_1328	1878
+     15 NZ_CP114777.1_cds_WP_011295538.1_1337	1371
+     15 NZ_CP114777.1_cds_WP_036905018.1_858	100161
+      5 NZ_CP114777.1_cds_WP_036905018.1_858	63013
+     66 NZ_CP114777.1_cds_WP_036906978.1_2076	1077
+      1 NZ_CP114777.1_cds_WP_036906978.1_2076	69838
+     25 NZ_CP114777.1_cds_WP_038653576.1_773	1505
+     52 NZ_CP114777.1_cds_WP_071841048.1_313	10523
+     71 NZ_CP114777.1_cds_WP_158466229.1_2075	2727
+      7 NZ_CP114777.1_cds_WP_158466229.1_2075	57215
+     93 NZ_CP114777.1_cds_WP_269603446.1_1211	685
+      1 NZ_CP114777.1_cds_WP_269603461.1_1221	100278
+      1 NZ_CP114777.1_cds_WP_269604438.1_1810	1984
+      3 NZ_CP114777.1_cds_WP_269606848.1_1119	64546
+      4 NZ_CP114777.1_cds_WP_269609630.1_1865	6841
+      3 NZ_CP114777.1_cds_WP_269611556.1_1250	1817
+      1 NZ_CP114777.1_cds_WP_269612110.1_1708	1199
+      2 NZ_CP114777.1_cds_WP_269612688.1_188	63809
+      1 NZ_CP114777.1_cds_WP_269612688.1_188	70326
+     13 NZ_CP114777.1_cds_WP_269623620.1_1126	156
+      1 NZ_CP114777.1_cds_WP_269623641.1_1149	64401
+      1 NZ_CP114777.1_cds_WP_269623641.1_1149	79997
+      1 NZ_CP114777.1_cds_WP_269623648.1_1156	27675
+     11 NZ_CP114777.1_cds_WP_269623652.1_1160	2442
+      1 NZ_CP114777.1_cds_WP_269623662.1_1170	69364
+      2 NZ_CP114777.1_cds_WP_269623673.1_1183	67122
+      2 NZ_CP114777.1_cds_WP_269623673.1_1183	67185
+     72 NZ_CP114777.1_cds_WP_269623674.1_1184	10033
+      2 NZ_CP114777.1_cds_WP_269623674.1_1184	61028
+      2 NZ_CP114777.1_cds_WP_269623674.1_1184	63387
+     92 NZ_CP114777.1_cds_WP_269623697.1_1212	2490
+      2 NZ_CP114777.1_cds_WP_269623697.1_1212	70074
+      1 NZ_CP114777.1_cds_WP_269623698.1_1213	64916
+      2 NZ_CP114777.1_cds_WP_269623698.1_1213	65610
+      2 NZ_CP114777.1_cds_WP_269623698.1_1213	68599
+      3 NZ_CP114777.1_cds_WP_269623703.1_1220	66342
+     89 NZ_CP114777.1_cds_WP_269623724.1_1244	2
+      4 NZ_CP114777.1_cds_WP_269623728.1_1249	63045
+      2 NZ_CP114777.1_cds_WP_269623736.1_1259	59865
+      5 NZ_CP114777.1_cds_WP_269623739.1_1265	686
+      2 NZ_CP114777.1_cds_WP_269623742.1_1268	5286
+      1 NZ_CP114777.1_cds_WP_269623782.1_1313	69906
+      1 NZ_CP114777.1_cds_WP_269623787.1_1318	75655
+      1 NZ_CP114777.1_cds_WP_269623798.1_1331	62372
+      3 NZ_CP114777.1_cds_WP_269623820.1_1356	30266
+      1 NZ_CP114777.1_cds_WP_269623820.1_1356	79410
+      3 NZ_CP114777.1_cds_WP_269623826.1_1363	68028
+      2 NZ_CP114777.1_cds_WP_269623949.1_1495	69527
+      1 NZ_CP114777.1_cds_WP_269623968.1_1516	160060
+      1 NZ_CP114777.1_cds_WP_269624129.1_1684	437
+     12 NZ_CP114777.1_cds_WP_269624135.1_1692	1199
+      3 NZ_CP114777.1_cds_WP_269624139.1_1697	1367
+      1 NZ_CP114777.1_cds_WP_269624183.1_1749	64827
+      2 NZ_CP114777.1_cds_WP_269624184.1_1750	185
+      4 NZ_CP114777.1_cds_WP_269624191.1_1758	236
+      2 NZ_CP114777.1_cds_WP_269624204.1_1774	60491
+      1 NZ_CP114777.1_cds_WP_269624242.1_1820	16469
+      4 NZ_CP114777.1_cds_WP_269624242.1_1820	58029
+      1 NZ_CP114777.1_cds_WP_269624251.1_1830	59965
+      3 NZ_CP114777.1_cds_WP_269624251.1_1830	67033
+      3 NZ_CP114777.1_cds_WP_269624252.1_1831	167
+      2 NZ_CP114777.1_cds_WP_269624252.1_1831	67830
+      2 NZ_CP114777.1_cds_WP_269624278.1_1861	101001
+      5 NZ_CP114777.1_cds_WP_269624278.1_1861	53662
+      3 NZ_CP114777.1_cds_WP_269624288.1_1875	1453
+      1 NZ_CP114777.1_cds_WP_269624288.1_1875	61692
+      5 NZ_CP114777.1_cds_WP_269624288.1_1875	62042
+      5 NZ_CP114777.1_cds_WP_269624289.1_1876	60820
+      2 NZ_CP114777.1_cds_WP_269624322.1_1911	66534
+     38 NZ_CP114777.1_cds_WP_269624342.1_1938	6632
+      1 NZ_CP114777.1_cds_WP_269624349.1_1948	66675
+      2 NZ_CP114777.1_cds_WP_269624349.1_1948	70627
+      1 NZ_CP114777.1_cds_WP_269624371.1_1971	78096
+      3 NZ_CP114777.1_cds_WP_269624422.1_2024	35656
+      2 NZ_CP114777.1_cds_WP_269624422.1_2024	67214
+      2 NZ_CP114777.1_cds_WP_269624422.1_2024	69867
+      1 NZ_CP114777.1_cds_WP_269624445.1_2047	58538
+      7 NZ_CP114777.1_cds_WP_269624451.1_2053	62036
+      3 NZ_CP114777.1_cds_WP_269624501.1_17	297
+      3 NZ_CP114777.1_cds_WP_269624562.1_83	65152
+      2 NZ_CP114777.1_cds_WP_269624644.1_179	1844
+      1 NZ_CP114777.1_cds_WP_269624664.1_202	587
+      1 NZ_CP114777.1_cds_WP_269624664.1_202	66899
+      1 NZ_CP114777.1_cds_WP_269624664.1_202	75823
+      1 NZ_CP114777.1_cds_WP_269624664.1_202	75877
+     11 NZ_CP114777.1_cds_WP_269624669.1_207	198
+      3 NZ_CP114777.1_cds_WP_269624669.1_207	62647
+      1 NZ_CP114777.1_cds_WP_269624669.1_207	64615
+      7 NZ_CP114777.1_cds_WP_269624758.1_304	202120
+      1 NZ_CP114777.1_cds_WP_269624758.1_304	67917
+      1 NZ_CP114777.1_cds_WP_269624788.1_335	76464
+      1 NZ_CP114777.1_cds_WP_269624788.1_335	79413
+      2 NZ_CP114777.1_cds_WP_269624853.1_406	15935
+      5 NZ_CP114777.1_cds_WP_269624853.1_406	63114
+      3 NZ_CP114777.1_cds_WP_269624853.1_406	65893
+      4 NZ_CP114777.1_cds_WP_269624855.1_408	62692
+      1 NZ_CP114777.1_cds_WP_269625039.1_620	59972
+      5 NZ_CP114777.1_cds_WP_269625069.1_656	58
+     50 NZ_CP114777.1_cds_WP_269625088.1_675	100219
+      1 NZ_CP114777.1_cds_WP_269625088.1_675	55982
+      4 NZ_CP114777.1_cds_WP_269625090.1_678	192
+      1 NZ_CP114777.1_cds_WP_269625091.1_679	2075
+      1 NZ_CP114777.1_cds_WP_269625243.1_844	62655
+      1 NZ_CP114777.1_cds_WP_269625243.1_844	67284
+      1 NZ_CP114777.1_cds_WP_269625243.1_844	69971
+      2 NZ_CP114777.1_cds_WP_269625249.1_850	3376
+      3 NZ_CP114777.1_cds_WP_269625286.1_892	69348
+      1 NZ_CP114777.1_cds_WP_269625298.1_905	227
+      1 NZ_CP114777.1_cds_WP_269625298.1_905	70689
+      1 NZ_CP114777.1_cds_WP_269625299.1_906	74369
+      1 NZ_CP114777.1_cds_WP_269625299.1_906	77428
+      1 NZ_CP114777.1_cds_WP_269625352.1_961	62748
+      1 NZ_CP114777.1_cds_WP_269625375.1_986	3248
+      1 NZ_CP114777.1_cds_WP_269625376.1_987	25451
+      2 NZ_CP114777.1_cds_WP_269625418.1_1032	1681
+     75 NZ_CP114777.1_cds_WP_269625428.1_1044	1233
+      1 NZ_CP114777.1_cds_WP_269625428.1_1044	65281
+      2 NZ_CP114777.1_cds_WP_269625428.1_1044	67269
+     10 NZ_CP114777.1_cds_WP_269625429.1_1045	4510
+      1 NZ_CP114777.1_cds_WP_269625482.1_1101	69831
+      1 NZ_CP114777.1_cds_WP_269625482.1_1101	70150
+      1 NZ_CP114777.1_cds_WP_269625513.1_794	61603
+```
+
+#### Pour la suite, il faudra que je sélectionne pour les CDS qui sont définis sur plusieurs COGS, le COG le plus représentatif (celui ou il est présent le plus grand nombre de fois).
+
+#### Mais comment faire quand par exemple pour un CDS on a l'attribution à 3 COGS différents mais qui sont tous représentés par exemple seulement 1 fois.
+
+```{r, engine='bash', eval=FALSE}
+more result_GCF_027359355.1 | awk '{OFS="\t"} { if ($3<1e-5 && $6>0.8) { ratio = ($7 <= $8) ? $9/$7 : $9/$8; if (ratio > 0.75) { print $1,$2,$3,$6,ratio }}}' | cut -d "|" -f1 | sort -k1 | uniq -c
+
+# Fonctionne pas comme je veux (continuer dessus) :
+more result_GCF_027359355.1 | awk '{OFS="\t"} { if ($3<1e-5 && $6>0.8) { ratio = ($7 <= $8) ? $9/$7 : $9/$8; if (ratio > 0.75) { print $1,$2,$3,$6,ratio }}}' | cut -d "|" -f1 | sort -k1 | uniq -c | awk 'BEGIN {FS="\t"} {if ($1 > max[$2]) {max[$2] = $1}} END {for (id in max) {print id, max[id]}}'
+
+```
+
+
+

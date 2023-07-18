@@ -1,0 +1,15 @@
+---
+title: "21_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-21"
+output: html_document
+---
+
+# <span style="color:red"> J'ai refait la même analyse qu'hier à partir de COGS formés avec des seuils différents </span>
+
+```{r, engine='bash', eval=FALSE}
+rsync -a Genomes_refs_AA_2/COGS_NT/ My_COGS2/
+rsync -a More_COGS2/COGS_NT/ My_COGS2/
+```
+
+##### Voir compte rendu résumé partie COGS

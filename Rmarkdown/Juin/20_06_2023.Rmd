@@ -1,0 +1,85 @@
+---
+title: "20_06_2023"
+author: "ARQUE Maxime"
+date: "2023-06-20"
+output: html_document
+---
+
+# <span style="color:red"> Formation de COGS à partir des 7815 protéines </span>
+
+##### J'ai donc identifié les 7815 protéines qui n'ont pas été attribuées à des COGS avec mon analyse précédente. 
+##### Script python pour récupérer les séquences des protéines : Recup_seqprot.py
+##### Génération de deux fichiers : extracted_seqs et extracted_seqs_uniq (certaines protéines sont multispecies et posent problème car elles ont le même nom donc je les ai supprimées)
+##### A partir du fichier extracted_seqs_uniq, j'ai utilisé galaxy "globuls genomics" et leur workflow sur mon jeu de donnée pour produire un fichier tab de groupes de protéines : Result_galaxy.tabular
+##### https://veupathdbprod.globusgenomics.org/workflows/run?id=8828b95e07297748
+##### A partir de ce fichier j'ai attribué à tous ces groupes un numéro de COG (commencant par "2023")
+##### J'ai ensuite créer un script python pour pouvoir compter le nombre de protéines assignées (4225 sur les 7390 uniques). Ces 4225 protéines ont permis de former 1280 COGS.
+##### Il reste cependant 3590 protéines non couvertes le worflow.
+
+
+## <span style="color:blue"> Utilisation de script pour re attribuer les protéines en fonction des génomes </span>
+
+```{r, engine='bash', eval=FALSE}
+#Création d'un script qui réattribue les protéines en fonction des génomes de référence
+find -name "prot*" -exec python3 toto.py {} \;
+find -name "prot*" -exec python3 toto2.py {} \;
+```
+
+## <span style="color:blue"> Attribution des séquences NT en fonction des protéines pour les COGS avec 1 seul gen ref </span>
+
+```{r, engine='bash', eval=FALSE}
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_027359575.txt ./data/GCF_027359575.1/cds_from_genomic.fna > COGS_NT/GCF_027359575
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000015685.txt ./data/GCF_000015685.1/cds_from_genomic.fna > COGS_NT/GCF_000015685
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_027359355.txt ./data/GCF_027359355.1/cds_from_genomic.fna > COGS_NT/GCF_027359355
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000015965.txt ./data/GCF_000015965.1/cds_from_genomic.fna > COGS_NT/GCF_000015965
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000012465.txt ./data/GCF_000012465.1/cds_from_genomic.fna > COGS_NT/GCF_000012465
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000018065.txt ./data/GCF_000018065.1/cds_from_genomic.fna > COGS_NT/GCF_000018065
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_027359525.txt ./data/GCF_027359525.1/cds_from_genomic.fna > COGS_NT/GCF_027359525
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_027359415.txt ./data/GCF_027359415.1/cds_from_genomic.fna > COGS_NT/GCF_027359415
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000015665.txt ./data/GCF_000015665.1/cds_from_genomic.fna > COGS_NT/GCF_000015665
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000015705.txt ./data/GCF_000015705.1/cds_from_genomic.fna > COGS_NT/GCF_000015705
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_027359475.txt ./data/GCF_027359475.1/cds_from_genomic.fna > COGS_NT/GCF_027359475
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000015645.txt ./data/GCF_000015645.1/cds_from_genomic.fna > COGS_NT/GCF_000015645
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000007925.txt ./data/GCF_000007925.1/cds_from_genomic.fna > COGS_NT/GCF_000007925
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000012645.txt ./data/GCF_000012645.1/cds_from_genomic.fna > COGS_NT/GCF_000012645
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_027359375.txt ./data/GCF_027359375.1/cds_from_genomic.fna > COGS_NT/GCF_027359375
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_027359395.txt ./data/GCF_027359395.1/cds_from_genomic.fna > COGS_NT/GCF_027359395
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000011485.txt ./data/GCF_000011485.1/cds_from_genomic.fna > COGS_NT/GCF_000011485
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_027359595.txt ./data/GCF_027359595.1/cds_from_genomic.fna > COGS_NT/GCF_027359595
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000018585.txt ./data/GCF_000018585.1/cds_from_genomic.fna > COGS_NT/GCF_000018585
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000011465.txt ./data/GCF_000011465.1/cds_from_genomic.fna > COGS_NT/GCF_000011465
+python3 ScriptAA.py ./Output_single/COGS_result_GCF_000158595.txt ./data/GCF_000158595.1/cds_from_genomic.fna > COGS_NT/GCF_000158595
+```
+
+## <span style="color:blue"> Attribution des séquences NT en fonction des protéines pour les COGS avec plusieurs gen ref </span>
+
+```{r, engine='bash', eval=FALSE}
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_027359575.txt ./data/GCF_027359575.1/cds_from_genomic.fna >> COGS_NT/GCF_027359575
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000015685.txt ./data/GCF_000015685.1/cds_from_genomic.fna >> COGS_NT/GCF_000015685
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_027359355.txt ./data/GCF_027359355.1/cds_from_genomic.fna >> COGS_NT/GCF_027359355
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000015965.txt ./data/GCF_000015965.1/cds_from_genomic.fna >> COGS_NT/GCF_000015965
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000012465.txt ./data/GCF_000012465.1/cds_from_genomic.fna >> COGS_NT/GCF_000012465
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000018065.txt ./data/GCF_000018065.1/cds_from_genomic.fna >> COGS_NT/GCF_000018065
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_027359525.txt ./data/GCF_027359525.1/cds_from_genomic.fna >> COGS_NT/GCF_027359525
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_027359415.txt ./data/GCF_027359415.1/cds_from_genomic.fna >> COGS_NT/GCF_027359415
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000015665.txt ./data/GCF_000015665.1/cds_from_genomic.fna >> COGS_NT/GCF_000015665
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000015705.txt ./data/GCF_000015705.1/cds_from_genomic.fna >> COGS_NT/GCF_000015705
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_027359475.txt ./data/GCF_027359475.1/cds_from_genomic.fna >> COGS_NT/GCF_027359475
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000015645.txt ./data/GCF_000015645.1/cds_from_genomic.fna >> COGS_NT/GCF_000015645
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000007925.txt ./data/GCF_000007925.1/cds_from_genomic.fna >> COGS_NT/GCF_000007925
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000012645.txt ./data/GCF_000012645.1/cds_from_genomic.fna >> COGS_NT/GCF_000012645
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_027359375.txt ./data/GCF_027359375.1/cds_from_genomic.fna >> COGS_NT/GCF_027359375
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_027359395.txt ./data/GCF_027359395.1/cds_from_genomic.fna >> COGS_NT/GCF_027359395
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000011485.txt ./data/GCF_000011485.1/cds_from_genomic.fna >> COGS_NT/GCF_000011485
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_027359595.txt ./data/GCF_027359595.1/cds_from_genomic.fna >> COGS_NT/GCF_027359595
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000018585.txt ./data/GCF_000018585.1/cds_from_genomic.fna >> COGS_NT/GCF_000018585
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000011465.txt ./data/GCF_000011465.1/cds_from_genomic.fna >> COGS_NT/GCF_000011465
+python3 ScriptAA.py ./Output_multi/COGS_result_GCF_000158595.txt ./data/GCF_000158595.1/cds_from_genomic.fna >> COGS_NT/GCF_000158595
+```
+
+## <span style="color:blue"> Création d'un dossier My_COGS qui contient tous les COGS </span>
+
+```{r, engine='bash', eval=FALSE}
+rsync -a Genomes_refs_AA_2/COGS_NT/ My_COGS/
+rsync -a More_COGS/COGS_NT/ My_COGS/
+```

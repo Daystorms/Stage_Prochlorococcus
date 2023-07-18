@@ -1,0 +1,1422 @@
+---
+title: "03_07_2023"
+author: "ARQUE Maxime"
+date: "2023-07-03"
+output: html_document
+---
+
+```{r Packages, message=FALSE, warning=FALSE, include=TRUE}
+library(panstripe)
+library(ape)
+library(patchwork)
+library(TreeTools)
+library(ggtree)
+library(castor)
+library(ggplot2)
+library(phytools)
+library(rpart)
+library(tidyr)
+library(tibble)
+library(dplyr)
+library(reshape2)
+library(ggpmisc)
+set.seed(1234)
+```
+
+
+# <span style="color:green"> Suite : formation du tableau pour analyses statistiques </span>
+
+
+# <span style="color:red"> Partie 1 Récupération de certaines données pour le tableau </span>
+
+## <span style="color:blue"> Importation des données 18 SAGS </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Annot_All_COGS.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data_18=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Data_count/Count_BASH/family.txt", header=T, sep="\t", check.names = F)
+raw_data_18=raw_data_18[!(apply(raw_data_18[, 3:(ncol(raw_data_18)-4)], 1, function(x) all(x == 0))), ]
+
+data_count=raw_data_18[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+data_merge_spec_18=cbind(data_merge_spec,All_events=data_merge_spec$Gains+data_merge_spec$Losses)
+data_merge_spec_18=subset(data_merge_spec_18, !grepl("comp|Ambiguous", compartiment) & grepl("",compartiment))
+
+rm(data_compartiments)
+rm(data_count)
+```
+
+## <span style="color:blue"> Importation des données 7 Genrefs </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Annot_All_COGS.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data_7=read.csv("/home/maarque/Donnees_projet/Data/7_Genrefs/COUNT_bash/family.txt", header=T, sep="\t", check.names = F)
+raw_data_7=raw_data_7[!(apply(raw_data_7[, 3:(ncol(raw_data_7)-4)], 1, function(x) all(x == 0))), ]
+
+
+data_count=raw_data_7[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+data_merge_spec_7=cbind(data_merge_spec,All_events=data_merge_spec$Gains+data_merge_spec$Losses)
+data_merge_spec_7=subset(data_merge_spec_7, !grepl("comp|Ambiguous", compartiment) & grepl("",compartiment))
+
+
+rm(data_compartiments)
+rm(data_count)
+```
+
+## <span style="color:blue"> Importation des données 25 SAGS + Genrefs </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Annot_All_COGS.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+
+
+raw_data_25=read.csv("/home/maarque/Donnees_projet/Data/7_Genrefs_18_SAGS/COUNT_bash/family.txt", header=T, sep="\t", check.names = F)
+raw_data_25=raw_data_25[!(apply(raw_data_25[, 3:(ncol(raw_data_25)-4)], 1, function(x) all(x == 0))), ]
+
+data_count=raw_data_25[,c("name","Gains","Losses")]
+colnames(data_count)[1]="COG"
+
+data_merge_spec=merge(data_count,data_compartiments, by.x="COG", all = FALSE)
+data_merge_spec_25=cbind(data_merge_spec,All_events=data_merge_spec$Gains+data_merge_spec$Losses)
+data_merge_spec_25=subset(data_merge_spec_25, !grepl("comp|Ambiguous", compartiment) & grepl("",compartiment))
+
+
+rm(data_compartiments)
+rm(data_count)
+rm(data_merge_spec)
+```
+
+
+
+# <span style="color:red"> Partie 2 : Formation du tableau récapitulatif pour test statistiques  </span>
+
+## <span style="color:blue"> Colnames  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+Nom_col=c("Dataset","Gentype","Compartiment","COGS_per_compart","COGS_per_I_compart","COGS_wGain","COGS_wLoss","COGS_wGain&Loss","All_events_per_compart","All_gains","All_losses","Average_events_per_I_COGS","Average_gains_per_COGS","Average_losses_per_COGS","ET_average_events")
+
+my_df=setNames(data.frame(matrix(ncol = 15, nrow = 36)), Nom_col)
+my_df[,1][1:12]="18"
+my_df[,1][13:24]="7"
+my_df[,1][25:36]="25"
+my_df[,2]=c(rep("core",6),rep("flex",6))
+my_df[,3]=c("backbone","ISL1","ISL2","ISL3","ISL4","ISL5")
+```
+
+## <span style="color:blue"> COGS per compart  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+SAG_core=table(data_merge_spec_18$compartiment[data_merge_spec_18$gentype=="core"])
+GENREF_core=table(data_merge_spec_7$compartiment[data_merge_spec_7$gentype=="core"])
+ALL_core=table(data_merge_spec_25$compartiment[data_merge_spec_25$gentype=="core"])
+
+SAG_flex=table(data_merge_spec_18$compartiment[data_merge_spec_18$gentype=="flex"])
+GENREF_flex=table(data_merge_spec_7$compartiment[data_merge_spec_7$gentype=="flex"])
+ALL_flex=table(data_merge_spec_25$compartiment[data_merge_spec_25$gentype=="flex"])
+
+my_df[,4][1:6]=SAG_core
+my_df[,4][7:12]=SAG_flex
+
+my_df[,4][13:18]=GENREF_core
+my_df[,4][19:24]=GENREF_flex
+
+my_df[,4][25:30]=ALL_core
+my_df[,4][31:36]=ALL_flex
+```
+
+## <span style="color:blue"> COGS per impacted compart  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+SAG_core=table(data_merge_spec_18$compartiment[data_merge_spec_18$gentype=="core" & data_merge_spec_18$All_events>=1])
+GENREF_core=table(data_merge_spec_7$compartiment[data_merge_spec_7$gentype=="core" & data_merge_spec_7$All_events>=1])
+ALL_core=table(data_merge_spec_25$compartiment[data_merge_spec_25$gentype=="core" & data_merge_spec_25$All_events>=1])
+
+SAG_flex=table(data_merge_spec_18$compartiment[data_merge_spec_18$gentype=="flex" & data_merge_spec_18$All_events>=1])
+GENREF_flex=table(data_merge_spec_7$compartiment[data_merge_spec_7$gentype=="flex" & data_merge_spec_7$All_events>=1])
+ALL_flex=table(data_merge_spec_25$compartiment[data_merge_spec_25$gentype=="flex" & data_merge_spec_25$All_events>=1])
+
+my_df[,5][1:6]=SAG_core
+my_df[,5][7:12]=SAG_flex
+
+my_df[,5][13:18]=GENREF_core
+my_df[,5][19:24]=GENREF_flex
+
+my_df[,5][25:30]=ALL_core
+my_df[,5][31:36]=ALL_flex
+```
+
+## <span style="color:blue"> COGS with gains  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+SAG_core=table(data_merge_spec_18$compartiment[data_merge_spec_18$gentype=="core" & data_merge_spec_18$Gains>=1])
+SAG_core=c(SAG_core,c(ISL1=0, ISL2=0))
+SAG_core=SAG_core[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5")]
+
+GENREF_core=table(data_merge_spec_7$compartiment[data_merge_spec_7$gentype=="core" & data_merge_spec_7$Gains>=1])
+GENREF_core=c(GENREF_core,c(ISL1=0, ISL4=0))
+GENREF_core=GENREF_core[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5")]
+
+
+ALL_core=table(data_merge_spec_25$compartiment[data_merge_spec_25$gentype=="core" & data_merge_spec_25$Gains>=1])
+ALL_core=c(ALL_core,c(ISL1=0, ISL4=0))
+ALL_core=ALL_core[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5")]
+
+
+
+SAG_flex=table(data_merge_spec_18$compartiment[data_merge_spec_18$gentype=="flex" & data_merge_spec_18$Gains>=1])
+GENREF_flex=table(data_merge_spec_7$compartiment[data_merge_spec_7$gentype=="flex" & data_merge_spec_7$Gains>=1])
+ALL_flex=table(data_merge_spec_25$compartiment[data_merge_spec_25$gentype=="flex" & data_merge_spec_25$Gains>=1])
+
+my_df[,6][1:6]=SAG_core
+my_df[,6][7:12]=SAG_flex
+
+my_df[,6][13:18]=GENREF_core
+my_df[,6][19:24]=GENREF_flex
+
+my_df[,6][25:30]=ALL_core
+my_df[,6][31:36]=ALL_flex
+```
+
+## <span style="color:blue"> COGS with losses  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+SAG_core=table(data_merge_spec_18$compartiment[data_merge_spec_18$gentype=="core" & data_merge_spec_18$Losses>=1])
+GENREF_core=table(data_merge_spec_7$compartiment[data_merge_spec_7$gentype=="core" & data_merge_spec_7$Losses>=1])
+ALL_core=table(data_merge_spec_25$compartiment[data_merge_spec_25$gentype=="core" & data_merge_spec_25$Losses>=1])
+
+SAG_flex=table(data_merge_spec_18$compartiment[data_merge_spec_18$gentype=="flex" & data_merge_spec_18$Losses>=1])
+GENREF_flex=table(data_merge_spec_7$compartiment[data_merge_spec_7$gentype=="flex" & data_merge_spec_7$Losses>=1])
+ALL_flex=table(data_merge_spec_25$compartiment[data_merge_spec_25$gentype=="flex" & data_merge_spec_25$Losses>=1])
+
+my_df[,7][1:6]=SAG_core
+my_df[,7][7:12]=SAG_flex
+
+my_df[,7][13:18]=GENREF_core
+my_df[,7][19:24]=GENREF_flex
+
+my_df[,7][25:30]=ALL_core
+my_df[,7][31:36]=ALL_flex
+```
+
+## <span style="color:blue"> COGS with gains & losses  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+SAG_core=table(data_merge_spec_18$compartiment[data_merge_spec_18$gentype=="core" & data_merge_spec_18$Losses>=1 & data_merge_spec_18$Gains>=1])
+SAG_core=c(SAG_core,c(ISL1=0, ISL2=0))
+SAG_core=SAG_core[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5")]
+
+GENREF_core=table(data_merge_spec_7$compartiment[data_merge_spec_7$gentype=="core" & data_merge_spec_7$Losses>=1 & data_merge_spec_7$Gains>=1])
+GENREF_core=c(GENREF_core,c(ISL1=0, ISL2=0, ISL3=0, ISL4=0, ISL5=0))
+GENREF_core=GENREF_core[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5")]
+
+ALL_core=table(data_merge_spec_25$compartiment[data_merge_spec_25$gentype=="core" & data_merge_spec_25$Losses>=1 & data_merge_spec_25$Gains>=1])
+ALL_core=c(ALL_core,c(ISL1=0, ISL2=0, ISL3=0, ISL4=0))
+ALL_core=ALL_core[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5")]
+
+
+
+SAG_flex=table(data_merge_spec_18$compartiment[data_merge_spec_18$gentype=="flex" & data_merge_spec_18$Losses>=1 & data_merge_spec_18$Gains>=1])
+
+GENREF_flex=table(data_merge_spec_7$compartiment[data_merge_spec_7$gentype=="flex" & data_merge_spec_7$Losses>=1 & data_merge_spec_7$Gains>=1])
+GENREF_flex=c(GENREF_flex,c(ISL1=0, ISL3=0, ISL4=0))
+GENREF_flex=GENREF_flex[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5")]
+
+ALL_flex=table(data_merge_spec_25$compartiment[data_merge_spec_25$gentype=="flex" & data_merge_spec_25$Losses>=1 & data_merge_spec_25$Gains>=1])
+ALL_flex=c(ALL_flex,c(ISL2=0))
+ALL_flex=ALL_flex[c("Backbone","ISL1","ISL2","ISL3","ISL4","ISL5")]
+
+my_df[,8][1:6]=SAG_core
+my_df[,8][7:12]=SAG_flex
+
+my_df[,8][13:18]=GENREF_core
+my_df[,8][19:24]=GENREF_flex
+
+my_df[,8][25:30]=ALL_core
+my_df[,8][31:36]=ALL_flex
+```
+
+## <span style="color:blue"> All events per compart  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+SAG_core1=aggregate(Gains ~ compartiment, data = data_merge_spec_18, FUN = sum, subset = gentype == "core" & Losses >= 0 & Gains >= 0)
+SAG_core2=aggregate(Losses ~ compartiment, data = data_merge_spec_18, FUN = sum, subset = gentype == "core" & Losses >= 0 & Gains >= 0)
+SAG_core=SAG_core1$Gains+SAG_core2$Losses
+
+GENREF_core1=aggregate(Gains ~ compartiment, data = data_merge_spec_7, FUN = sum, subset = gentype == "core" & Losses >= 0 & Gains >= 0)
+GENREF_core2=aggregate(Losses ~ compartiment, data = data_merge_spec_7, FUN = sum, subset = gentype == "core" & Losses >= 0 & Gains >= 0)
+GENREF_core=GENREF_core1$Gains+GENREF_core2$Losses
+
+ALL_core1=aggregate(Gains ~ compartiment, data = data_merge_spec_25, FUN = sum, subset = gentype == "core" & Losses >= 0 & Gains >= 0)
+ALL_core2=aggregate(Losses ~ compartiment, data = data_merge_spec_25, FUN = sum, subset = gentype == "core" & Losses >= 0 & Gains >= 0)
+ALL_core=ALL_core1$Gains+ALL_core2$Losses
+
+
+
+SAG_flex1=aggregate(Gains ~ compartiment, data = data_merge_spec_18, FUN = sum, subset = gentype == "flex" & Losses >= 0 & Gains >= 0)
+SAG_flex2=aggregate(Losses ~ compartiment, data = data_merge_spec_18, FUN = sum, subset = gentype == "flex" & Losses >= 0 & Gains >= 0)
+SAG_flex=SAG_flex1$Gains+SAG_flex2$Losses
+
+GENREF_flex1=aggregate(Gains ~ compartiment, data = data_merge_spec_7, FUN = sum, subset = gentype == "flex" & Losses >= 0 & Gains >= 0)
+GENREF_flex2=aggregate(Losses ~ compartiment, data = data_merge_spec_7, FUN = sum, subset = gentype == "flex" & Losses >= 0 & Gains >= 0)
+GENREF_flex=GENREF_flex1$Gains+GENREF_flex2$Losses
+
+ALL_flex1=aggregate(Gains ~ compartiment, data = data_merge_spec_25, FUN = sum, subset = gentype == "flex" & Losses >= 0 & Gains >= 0)
+ALL_flex2=aggregate(Losses ~ compartiment, data = data_merge_spec_25, FUN = sum, subset = gentype == "flex" & Losses >= 0 & Gains >= 0)
+ALL_flex=ALL_flex1$Gains+ALL_flex2$Losses
+
+
+
+my_df[,9][1:6]=SAG_core
+my_df[,9][7:12]=SAG_flex
+
+my_df[,9][13:18]=GENREF_core
+my_df[,9][19:24]=GENREF_flex
+
+my_df[,9][25:30]=ALL_core
+my_df[,9][31:36]=ALL_flex
+```
+
+
+## <span style="color:blue"> All_gains </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+SAG_core1=aggregate(Gains ~ compartiment, data = data_merge_spec_18, FUN = sum, subset = gentype == "core" & Losses >= 0 & Gains >= 0)
+SAG_core=SAG_core1$Gains
+
+GENREF_core1=aggregate(Gains ~ compartiment, data = data_merge_spec_7, FUN = sum, subset = gentype == "core" & Losses >= 0 & Gains >= 0)
+GENREF_core=GENREF_core1$Gains
+
+ALL_core1=aggregate(Gains ~ compartiment, data = data_merge_spec_25, FUN = sum, subset = gentype == "core" & Losses >= 0 & Gains >= 0)
+ALL_core=ALL_core1$Gains
+
+
+
+SAG_flex1=aggregate(Gains ~ compartiment, data = data_merge_spec_18, FUN = sum, subset = gentype == "flex" & Losses >= 0 & Gains >= 0)
+SAG_flex=SAG_flex1$Gains
+
+GENREF_flex1=aggregate(Gains ~ compartiment, data = data_merge_spec_7, FUN = sum, subset = gentype == "flex" & Losses >= 0 & Gains >= 0)
+GENREF_flex=GENREF_flex1$Gains
+
+ALL_flex1=aggregate(Gains ~ compartiment, data = data_merge_spec_25, FUN = sum, subset = gentype == "flex" & Losses >= 0 & Gains >= 0)
+ALL_flex=ALL_flex1$Gains
+
+
+
+my_df[,10][1:6]=SAG_core
+my_df[,10][7:12]=SAG_flex
+
+my_df[,10][13:18]=GENREF_core
+my_df[,10][19:24]=GENREF_flex
+
+my_df[,10][25:30]=ALL_core
+my_df[,10][31:36]=ALL_flex
+```
+
+
+## <span style="color:blue"> All_losses </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+SAG_core1=aggregate(Losses ~ compartiment, data = data_merge_spec_18, FUN = sum, subset = gentype == "core" & Losses >= 0 & Gains >= 0)
+SAG_core=SAG_core1$Losses
+
+GENREF_core1=aggregate(Losses ~ compartiment, data = data_merge_spec_7, FUN = sum, subset = gentype == "core" & Losses >= 0 & Gains >= 0)
+GENREF_core=GENREF_core1$Losses
+
+ALL_core1=aggregate(Losses ~ compartiment, data = data_merge_spec_25, FUN = sum, subset = gentype == "core" & Losses >= 0 & Gains >= 0)
+ALL_core=ALL_core1$Losses
+
+
+
+SAG_flex1=aggregate(Losses ~ compartiment, data = data_merge_spec_18, FUN = sum, subset = gentype == "flex" & Losses >= 0 & Gains >= 0)
+SAG_flex=SAG_flex1$Losses
+
+GENREF_flex1=aggregate(Losses ~ compartiment, data = data_merge_spec_7, FUN = sum, subset = gentype == "flex" & Losses >= 0 & Gains >= 0)
+GENREF_flex=GENREF_flex1$Losses
+
+ALL_flex1=aggregate(Losses ~ compartiment, data = data_merge_spec_25, FUN = sum, subset = gentype == "flex" & Losses >= 0 & Gains >= 0)
+ALL_flex=ALL_flex1$Losses
+
+
+
+my_df[,11][1:6]=SAG_core
+my_df[,11][7:12]=SAG_flex
+
+my_df[,11][13:18]=GENREF_core
+my_df[,11][19:24]=GENREF_flex
+
+my_df[,11][25:30]=ALL_core
+my_df[,11][31:36]=ALL_flex
+```
+
+
+## <span style="color:blue"> Average_events_per_I_COGS </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+SAG_core=aggregate(All_events ~ compartiment, data = data_merge_spec_18, FUN = mean, subset = gentype == "core" & All_events>=1)
+SAG_core=SAG_core$All_events
+
+GENREF_core=aggregate(All_events ~ compartiment, data = data_merge_spec_7, FUN = mean, subset = gentype == "core" & All_events>=1)
+GENREF_core=GENREF_core$All_events
+
+ALL_core=aggregate(All_events ~ compartiment, data = data_merge_spec_25, FUN = mean, subset = gentype == "core" & All_events>=1)
+ALL_core=ALL_core$All_events
+
+
+SAG_flex=aggregate(All_events ~ compartiment, data = data_merge_spec_18, FUN = mean, subset = gentype == "flex" & All_events>=1)
+SAG_flex=SAG_flex$All_events
+
+GENREF_flex=aggregate(All_events ~ compartiment, data = data_merge_spec_7, FUN = mean, subset = gentype == "flex" & All_events>=1)
+GENREF_flex=GENREF_flex$All_events
+
+ALL_flex=aggregate(All_events ~ compartiment, data = data_merge_spec_25, FUN = mean, subset = gentype == "flex" & All_events>=1)
+ALL_flex=ALL_flex$All_events
+
+
+my_df[,12][1:6]=round(SAG_core,3)
+my_df[,12][7:12]=round(SAG_flex,3)
+
+my_df[,12][13:18]=round(GENREF_core,3)
+my_df[,12][19:24]=round(GENREF_flex,3)
+
+my_df[,12][25:30]=round(ALL_core,3)
+my_df[,12][31:36]=round(ALL_flex,3)
+```
+
+
+## <span style="color:blue"> Average_gains_per_COGS </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+SAG_core1=aggregate(Gains ~ compartiment, data = data_merge_spec_18, FUN = mean, subset = gentype == "core" & All_events>=1)
+SAG_core=SAG_core1$Gains
+
+GENREF_core1=aggregate(Gains ~ compartiment, data = data_merge_spec_7, FUN = mean, subset = gentype == "core" & All_events>=1)
+GENREF_core=GENREF_core1$Gains
+
+ALL_core1=aggregate(Gains ~ compartiment, data = data_merge_spec_25, FUN = mean, subset = gentype == "core" & All_events>=1)
+ALL_core=ALL_core1$Gains
+
+
+
+SAG_flex1=aggregate(Gains ~ compartiment, data = data_merge_spec_18, FUN = mean, subset = gentype == "flex" & All_events>=1)
+SAG_flex=SAG_flex1$Gains
+
+GENREF_flex1=aggregate(Gains ~ compartiment, data = data_merge_spec_7, FUN = mean, subset = gentype == "flex" & All_events>=1)
+GENREF_flex=GENREF_flex1$Gains
+
+ALL_flex1=aggregate(Gains ~ compartiment, data = data_merge_spec_25, FUN = mean, subset = gentype == "flex" & All_events>=1)
+ALL_flex=ALL_flex1$Gains
+
+
+
+my_df[,13][1:6]=round(SAG_core,3)
+my_df[,13][7:12]=round(SAG_flex,3)
+
+my_df[,13][13:18]=round(GENREF_core,3)
+my_df[,13][19:24]=round(GENREF_flex,3)
+
+my_df[,13][25:30]=round(ALL_core,3)
+my_df[,13][31:36]=round(ALL_flex,3)
+```
+
+
+## <span style="color:blue"> Average_losses_per_COGS </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+SAG_core1=aggregate(Losses ~ compartiment, data = data_merge_spec_18, FUN = mean, subset = gentype == "core" & All_events>=1)
+SAG_core=SAG_core1$Losses
+
+GENREF_core1=aggregate(Losses ~ compartiment, data = data_merge_spec_7, FUN = mean, subset = gentype == "core" & All_events>=1)
+GENREF_core=GENREF_core1$Losses
+
+ALL_core1=aggregate(Losses ~ compartiment, data = data_merge_spec_25, FUN = mean, subset = gentype == "core" & All_events>=1)
+ALL_core=ALL_core1$Losses
+
+
+
+SAG_flex1=aggregate(Losses ~ compartiment, data = data_merge_spec_18, FUN = mean, subset = gentype == "flex" & All_events>=1)
+SAG_flex=SAG_flex1$Losses
+
+GENREF_flex1=aggregate(Losses ~ compartiment, data = data_merge_spec_7, FUN = mean, subset = gentype == "flex" & All_events>=1)
+GENREF_flex=GENREF_flex1$Losses
+
+ALL_flex1=aggregate(Losses ~ compartiment, data = data_merge_spec_25, FUN = mean, subset = gentype == "flex" & All_events>=1)
+ALL_flex=ALL_flex1$Losses
+
+
+my_df[,14][1:6]=round(SAG_core,3)
+my_df[,14][7:12]=round(SAG_flex,3)
+
+my_df[,14][13:18]=round(GENREF_core,3)
+my_df[,14][19:24]=round(GENREF_flex,3)
+
+my_df[,14][25:30]=round(ALL_core,3)
+my_df[,14][31:36]=round(ALL_flex,3)
+
+```
+
+## <span style="color:blue"> ET_average_events 2 </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+SAG_core=aggregate(All_events ~ compartiment, data = data_merge_spec_18, FUN = sd, subset = gentype == "core" & All_events>=1)
+SAG_core=SAG_core$All_events
+
+GENREF_core=aggregate(All_events ~ compartiment, data = data_merge_spec_7, FUN = sd, subset = gentype == "core" & All_events>=1)
+GENREF_core=GENREF_core$All_events
+
+ALL_core=aggregate(All_events ~ compartiment, data = data_merge_spec_25, FUN = sd, subset = gentype == "core" & All_events>=1)
+ALL_core=ALL_core$All_events
+
+
+
+SAG_flex=aggregate(All_events ~ compartiment, data = data_merge_spec_18, FUN = sd, subset = gentype == "flex" & All_events>=1)
+SAG_flex=SAG_flex$All_events
+
+GENREF_flex=aggregate(All_events ~ compartiment, data = data_merge_spec_7, FUN = sd, subset = gentype == "flex" & All_events>=1)
+GENREF_flex=GENREF_flex$All_events
+
+ALL_flex=aggregate(All_events ~ compartiment, data = data_merge_spec_25, FUN = sd, subset = gentype == "flex" & All_events>=1)
+ALL_flex=ALL_flex$All_events
+
+my_df[,15][1:6]=round(SAG_core,3)
+my_df[,15][7:12]=round(SAG_flex,3)
+
+my_df[,15][13:18]=round(GENREF_core,3)
+my_df[,15][19:24]=round(GENREF_flex,3)
+
+my_df[,15][25:30]=round(ALL_core,3)
+my_df[,15][31:36]=round(ALL_flex,3)
+
+```
+
+## <span style="color:blue"> Affichage du dataframe </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+print(my_df)
+#write.table(my_df, file="./Table_alldata_stats.tsv", sep = '\t', quote=FALSE, row.names = FALSE, col.names = TRUE)
+```
+
+# <span style="color:red"> Partie 3 : Formation du tableau avec données regroupées  </span>
+
+## <span style="color:blue"> Dataframe plus synthétique avec des données regroupées </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+Nom_col=c("Dataset","Gentype","Compartiment","COGS_per_compart","COGS_per_I_compart","COGS_wGain","COGS_wLoss","COGS_wGain&Loss","All_events_per_compart","All_gains","All_losses","Average_events_per_I_COGS","Average_gains_per_COGS","Average_losses_per_COGS","ET_average_events")
+
+df_short=setNames(data.frame(matrix(ncol = 15, nrow = 12)), Nom_col)
+df_short[,1][1:4]="18"
+df_short[,1][5:8]="7"
+df_short[,1][9:12]="25"
+df_short[,2]=c(rep("core",2),rep("flex",2))
+df_short[,3]=c("backbone","ISLs")
+```
+
+## <span style="color:blue"> COGS per compart </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+df_short[1,4]=my_df[1,4]
+df_short[2,4]=sum(my_df[2:6,4])
+df_short[3,4]=my_df[7,4]
+df_short[4,4]=sum(my_df[8:12,4])
+df_short[5,4]=my_df[13,4]
+df_short[6,4]=sum(my_df[14:18,4])
+df_short[7,4]=my_df[19,4]
+df_short[8,4]=sum(my_df[20:24,4])
+df_short[9,4]=my_df[25,4]
+df_short[10,4]=sum(my_df[26:30,4])
+df_short[11,4]=my_df[31,4]
+df_short[12,4]=sum(my_df[32:36,4])
+```
+
+## <span style="color:blue"> COGS per I compart </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+df_short[1,5]=my_df[1,5]
+df_short[2,5]=sum(my_df[2:6,5])
+df_short[3,5]=my_df[7,5]
+df_short[4,5]=sum(my_df[8:12,5])
+df_short[5,5]=my_df[13,5]
+df_short[6,5]=sum(my_df[14:18,5])
+df_short[7,5]=my_df[19,5]
+df_short[8,5]=sum(my_df[20:24,5])
+df_short[9,5]=my_df[25,5]
+df_short[10,5]=sum(my_df[26:30,5])
+df_short[11,5]=my_df[31,5]
+df_short[12,5]=sum(my_df[32:36,5])
+```
+
+## <span style="color:blue"> COGS wGain </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+df_short[1,6]=my_df[1,6]
+df_short[2,6]=sum(my_df[2:6,6])
+df_short[3,6]=my_df[7,6]
+df_short[4,6]=sum(my_df[8:12,6])
+df_short[5,6]=my_df[13,6]
+df_short[6,6]=sum(my_df[14:18,6])
+df_short[7,6]=my_df[19,6]
+df_short[8,6]=sum(my_df[20:24,6])
+df_short[9,6]=my_df[25,6]
+df_short[10,6]=sum(my_df[26:30,6])
+df_short[11,6]=my_df[31,6]
+df_short[12,6]=sum(my_df[32:36,6])
+```
+
+## <span style="color:blue"> COGS wLoss </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+df_short[1,7]=my_df[1,7]
+df_short[2,7]=sum(my_df[2:6,7])
+df_short[3,7]=my_df[7,7]
+df_short[4,7]=sum(my_df[8:12,7])
+df_short[5,7]=my_df[13,7]
+df_short[6,7]=sum(my_df[14:18,7])
+df_short[7,7]=my_df[19,7]
+df_short[8,7]=sum(my_df[20:24,7])
+df_short[9,7]=my_df[25,7]
+df_short[10,7]=sum(my_df[26:30,7])
+df_short[11,7]=my_df[31,7]
+df_short[12,7]=sum(my_df[32:36,7])
+```
+
+## <span style="color:blue"> COGS wGain&Loss </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+df_short[1,8]=my_df[1,8]
+df_short[2,8]=sum(my_df[2:6,8])
+df_short[3,8]=my_df[7,8]
+df_short[4,8]=sum(my_df[8:12,8])
+df_short[5,8]=my_df[13,8]
+df_short[6,8]=sum(my_df[14:18,8])
+df_short[7,8]=my_df[19,8]
+df_short[8,8]=sum(my_df[20:24,8])
+df_short[9,8]=my_df[25,8]
+df_short[10,8]=sum(my_df[26:30,8])
+df_short[11,8]=my_df[31,8]
+df_short[12,8]=sum(my_df[32:36,8])
+```
+
+## <span style="color:blue"> All events per compart </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+df_short[1,9]=my_df[1,9]
+df_short[2,9]=sum(my_df[2:6,9])
+df_short[3,9]=my_df[7,9]
+df_short[4,9]=sum(my_df[8:12,9])
+df_short[5,9]=my_df[13,9]
+df_short[6,9]=sum(my_df[14:18,9])
+df_short[7,9]=my_df[19,9]
+df_short[8,9]=sum(my_df[20:24,9])
+df_short[9,9]=my_df[25,9]
+df_short[10,9]=sum(my_df[26:30,9])
+df_short[11,9]=my_df[31,9]
+df_short[12,9]=sum(my_df[32:36,9])
+```
+
+## <span style="color:blue"> All gains </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+df_short[1,10]=my_df[1,10]
+df_short[2,10]=sum(my_df[2:6,10])
+df_short[3,10]=my_df[7,10]
+df_short[4,10]=sum(my_df[8:12,10])
+df_short[5,10]=my_df[13,10]
+df_short[6,10]=sum(my_df[14:18,10])
+df_short[7,10]=my_df[19,10]
+df_short[8,10]=sum(my_df[20:24,10])
+df_short[9,10]=my_df[25,10]
+df_short[10,10]=sum(my_df[26:30,10])
+df_short[11,10]=my_df[31,10]
+df_short[12,10]=sum(my_df[32:36,10])
+```
+
+## <span style="color:blue"> All losses </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+df_short[1,11]=my_df[1,11]
+df_short[2,11]=sum(my_df[2:6,11])
+df_short[3,11]=my_df[7,11]
+df_short[4,11]=sum(my_df[8:12,11])
+df_short[5,11]=my_df[13,11]
+df_short[6,11]=sum(my_df[14:18,11])
+df_short[7,11]=my_df[19,11]
+df_short[8,11]=sum(my_df[20:24,11])
+df_short[9,11]=my_df[25,11]
+df_short[10,11]=sum(my_df[26:30,11])
+df_short[11,11]=my_df[31,11]
+df_short[12,11]=sum(my_df[32:36,11])
+```
+
+## <span style="color:blue"> Average_events_per_I_COGS </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+df_short[1,12]=my_df[1,12]
+df_short[2,12]=round(mean(my_df[2:6,12]),3)
+df_short[3,12]=my_df[7,12]
+df_short[4,12]=round(mean(my_df[8:12,12]),3)
+df_short[5,12]=my_df[13,12]
+df_short[6,12]=round(mean(my_df[14:18,12]),3)
+df_short[7,12]=my_df[19,12]
+df_short[8,12]=round(mean(my_df[20:24,12]),3)
+df_short[9,12]=my_df[25,12]
+df_short[10,12]=round(mean(my_df[26:30,12]),3)
+df_short[11,12]=my_df[31,12]
+df_short[12,12]=round(mean(my_df[32:36,12]),3)
+```
+
+## <span style="color:blue"> Average_gains_per_COGS </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+df_short[1,13]=my_df[1,13]
+df_short[2,13]=round(mean(my_df[2:6,13]),3)
+df_short[3,13]=my_df[7,13]
+df_short[4,13]=round(mean(my_df[8:12,13]),3)
+df_short[5,13]=my_df[13,13]
+df_short[6,13]=round(mean(my_df[14:18,13]),3)
+df_short[7,13]=my_df[19,13]
+df_short[8,13]=round(mean(my_df[20:24,13]),3)
+df_short[9,13]=my_df[25,13]
+df_short[10,13]=round(mean(my_df[26:30,13]),3)
+df_short[11,13]=my_df[31,13]
+df_short[12,13]=round(mean(my_df[32:36,13]),3)
+```
+
+## <span style="color:blue"> Average_losses_per_COGS </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+df_short[1,14]=my_df[1,14]
+df_short[2,14]=round(mean(my_df[2:6,14]),3)
+df_short[3,14]=my_df[7,14]
+df_short[4,14]=round(mean(my_df[8:12,14]),3)
+df_short[5,14]=my_df[13,14]
+df_short[6,14]=round(mean(my_df[14:18,14]),3)
+df_short[7,14]=my_df[19,14]
+df_short[8,14]=round(mean(my_df[20:24,14]),3)
+df_short[9,14]=my_df[25,14]
+df_short[10,14]=round(mean(my_df[26:30,14]),3)
+df_short[11,14]=my_df[31,14]
+df_short[12,14]=round(mean(my_df[32:36,14]),3)
+```
+
+## <span style="color:blue"> ET_average_events </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+df_short[1,15]=my_df[1,15]
+df_short[2,15]=round(mean(my_df[2:6,15], na.rm = TRUE),3)
+df_short[3,15]=my_df[7,15]
+df_short[4,15]=round(mean(my_df[8:12,15], na.rm = TRUE),3)
+df_short[5,15]=my_df[13,15]
+df_short[6,15]=round(mean(my_df[14:18,15], na.rm = TRUE),3)
+df_short[7,15]=my_df[19,15]
+df_short[8,15]=round(mean(my_df[20:24,15], na.rm = TRUE),3)
+df_short[9,15]=my_df[25,15]
+df_short[10,15]=round(mean(my_df[26:30,15], na.rm = TRUE),3)
+df_short[11,15]=my_df[31,15]
+df_short[12,15]=round(mean(my_df[32:36,15], na.rm = TRUE),3)
+```
+
+## <span style="color:blue"> Affichage du DF </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+print(df_short)
+#write.table(df_short, file="./Table_alldata_grouped_stats.tsv", sep = '\t', quote=FALSE, row.names = FALSE, col.names = TRUE)
+```
+
+
+# <span style="color:red"> Partie 4 : Tests de fisher pour impactés/non impactés </span>
+
+## <span style="color:blue"> Pour impacté/non impacté en fonction de compartiment et gentype : gentype18 </span>
+#### Question : Y'a-t-il une association significative entre les I/NI du core et flex des 18 SAGS : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_gentype18=matrix(c(1141,2251,214,14), nrow = 2, ncol = 2, dimnames = list(c("Core", "Flex"), c("Impacted", "Not_impacted")))
+gentype18=fisher.test(mat_gentype18)
+print(gentype18)
+print(gentype18$p.value)
+```
+
+## <span style="color:blue"> Pour impacté/non impacté en fonction de compartiment et gentype : gentype7 </span>
+#### Question : Y'a-t-il une association significative entre les I/NI du core et flex des 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_gentype7=matrix(c(166, 448, 1189, 149), nrow = 2, ncol = 2, dimnames = list(c("Core", "Flex"), c("Impacted", "Not_impacted")))
+gentype7=fisher.test(mat_gentype7)
+print(gentype7)
+print(gentype7$p.value)
+```
+
+## <span style="color:blue"> Pour impacté/non impacté en fonction de compartiment et gentype : compart18 pour core </span>
+#### Question : Y'a-t-il une association significative entre les I/NI du des core backbone/ISL des 18 SAGS : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_compart18_core=matrix(c(1091,50,214,0), nrow = 2, ncol = 2, dimnames = list(c("backbone", "ISLs"), c("Impacted", "Not_impacted")))
+compart18_core=fisher.test(mat_compart18_core)
+print(compart18_core)
+print(compart18_core$p.value)
+```
+
+## <span style="color:blue"> Pour impacté/non impacté en fonction de compartiment et gentype : compart7 pour core </span>
+#### Question : Y'a-t-il une association significative entre les I/NI du des core backbone/ISL des 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_compart7_core=matrix(c(149,17,1156,33), nrow = 2, ncol = 2, dimnames = list(c("backbone", "ISLs"), c("Impacted", "Not_impacted")))
+compart7_core=fisher.test(mat_compart7_core)
+print(compart7_core)
+print(compart7_core$p.value)
+```
+
+# <span style="color:red"> Partie 5 : Tests de fisher pour gains/non gains </span>
+
+## <span style="color:blue"> Pour gains/non gains en fonction de compartiment et gentype : gentype18 </span>
+#### Question : Y'a-t-il une association significative entre le rapport gain/nogain du core et flex des 18 SAGS : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_gentype18_gain=matrix(c(174,2067,1181,184), nrow = 2, ncol = 2, dimnames = list(c("Core", "Flex"), c("Gains", "Not_Gains")))
+gentype18_gain=fisher.test(mat_gentype18_gain)
+print(gentype18_gain)
+print(gentype18_gain$p.value)
+```
+
+## <span style="color:blue"> Pour gains/non gains en fonction de compartiment et gentype : gentype7 </span>
+#### Question : Y'a-t-il une association significative entre le rapport gain/nogain du core et flex des 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_gentype7_gain=matrix(c(104,349,62,99), nrow = 2, ncol = 2, dimnames = list(c("Core", "Flex"), c("Gains", "Not_Gains")))
+gentype7_gain=fisher.test(mat_gentype7_gain)
+print(gentype7_gain)
+print(gentype7_gain$p.value)
+```
+
+## <span style="color:blue"> Pour gains/non gains en fonction de compartiment et gentype : compart18 pour core </span>
+#### Question : Y'a-t-il une association significative entre le rapport gain/nogain du core backbone/ISL des 18 SAGS : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_compart18_core_gain=matrix(c(158,16,933,34), nrow = 2, ncol = 2, dimnames = list(c("backbone", "ISLs"), c("Gains", "Not_Gains")))
+compart18_core_gain=fisher.test(mat_compart18_core_gain)
+print(compart18_core_gain)
+print(compart18_core_gain$p.value)
+```
+
+## <span style="color:blue"> Pour gains/non gains en fonction de compartiment et gentype : compart7 pour core </span>
+#### Question : Y'a-t-il une association significative entre le rapport gain/nogain du core backbone/ISL des 7 genrefs : oui
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_compart7_core_gain=matrix(c(94,10,55,7), nrow = 2, ncol = 2, dimnames = list(c("backbone", "ISLs"), c("Gains", "Not_Gains")))
+compart7_core_gain=fisher.test(mat_compart7_core_gain)
+print(compart7_core_gain)
+print(compart7_core_gain$p.value)
+```
+
+# <span style="color:red"> Partie 6 : Etude du rapport gain et loss entre 18 et 7 </span>
+
+## <span style="color:blue"> 18 vs 7 pour le core des compartiments regroupés </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+rapport_gain_loss_allcompart=matrix(c((158+16)/(1091+50),(94+10)/(149+17),(1090+50)/(1091+50),(58+7)/(149+17)), nrow = 2, ncol = 2, dimnames = list(c("18_SAGS", "7_GENREFS"),c("Rapport_gain", "Rapport_loss")))
+```
+
+## <span style="color:blue"> 18 vs 7 pour le core de backbone </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+rapport_gain_loss_backbone=matrix(c((158)/(1091),(94)/(149),(1090)/(1091),(58)/(149)), nrow = 2, ncol = 2, dimnames = list(c("18_SAGS", "7_GENREFS"),c("Rapport_gain", "Rapport_loss")))
+```
+
+## <span style="color:blue"> 18 vs 7 pour le core de ISLs </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+rapport_gain_loss_ISLS=matrix(c((16)/(50),(10)/(17),(50)/(50),(7)/(17)), nrow = 2, ncol = 2, dimnames = list(c("18_SAGS", "7_GENREFS"),c("Rapport_gain", "Rapport_loss")))
+```
+
+## <span style="color:blue"> Results </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+print(rapport_gain_loss_allcompart)
+
+print(rapport_gain_loss_backbone)
+
+print(rapport_gain_loss_ISLS)
+```
+
+## <span style="color:blue"> Plots </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+allcomp=melt(rapport_gain_loss_allcompart)
+allcomp=allcomp[,c(2,3)]
+allcomp[,1]=c("gain_18_SAGS","gain_7_GENREFS","loss_18_SAGS","loss_7_GENREFS")
+
+backbone=melt(rapport_gain_loss_backbone)
+backbone=backbone[,c(2,3)]
+backbone[,1]=c("gain_18_SAGS","gain_7_GENREFS","loss_18_SAGS","loss_7_GENREFS")
+
+ISLS=melt(rapport_gain_loss_ISLS)
+ISLS=ISLS[,c(2,3)]
+ISLS[,1]=c("gain_18_SAGS","gain_7_GENREFS","loss_18_SAGS","loss_7_GENREFS")
+
+
+ggplot(allcomp, aes(x = Var2, y = value, fill= Var2)) +
+  geom_bar(stat = "identity") +
+  xlab("Rapport") +
+  ylab("Label") +
+  ggtitle("Rapport gain loss entre 18 SAGs et 7 Genrefs pour tous les compartiments") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")
+
+
+ggplot(backbone, aes(x = Var2, y = value, fill= Var2)) +
+  geom_bar(stat = "identity") +
+  xlab("Rapport") +
+  ylab("Label") +
+  ggtitle("Rapport gain loss entre 18 SAGs et 7 Genrefs pour le backbone") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")
+
+ggplot(ISLS, aes(x = Var2, y = value, fill= Var2)) +
+  geom_bar(stat = "identity") +
+  xlab("Rapport") +
+  ylab("Label") +
+  ggtitle("Rapport gain loss entre 18 SAGs et 7 Genrefs pour les ISLS") +
+  theme_minimal()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))+ 
+  geom_text(aes(label = round(value, 2)), vjust = -0.5, size=3) + labs(fill="Légende :")
+```
+
+
+# <span style="color:red"> Partie 7 : Comparaison des COGS with gains (16 vs 10 vs 12) </span>
+
+## <span style="color:blue"> Données </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+COGS_18=data_merge_spec_18$COG[data_merge_spec_18$gentype=="core" & data_merge_spec_18$compartiment %in% c("ISL1", "ISL2", "ISL3", "ISL4", "ISL5") & data_merge_spec_18$Gains>=1]
+
+COGS_7=data_merge_spec_7$COG[data_merge_spec_7$gentype=="core" & data_merge_spec_7$compartiment %in% c("ISL1", "ISL2", "ISL3", "ISL4", "ISL5") & data_merge_spec_7$Gains>=1]
+
+COGS_25=data_merge_spec_25$COG[data_merge_spec_25$gentype=="core" & data_merge_spec_25$compartiment %in% c("ISL1", "ISL2", "ISL3", "ISL4", "ISL5") & data_merge_spec_25$Gains>=1]
+```
+
+## <span style="color:blue"> Données </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+COGS_18=as.data.frame(COGS_18)
+colnames(COGS_18)="COG"
+COGS_18=merge(COGS_18,data_merge_spec_18,by="COG")
+
+COGS_7=as.data.frame(COGS_7)
+colnames(COGS_7)="COG"
+COGS_7=merge(COGS_7,data_merge_spec_7,by="COG")
+
+COGS_25=as.data.frame(COGS_25)
+colnames(COGS_25)="COG"
+COGS_25=merge(COGS_25,data_merge_spec_25,by="COG")
+
+```
+
+# <span style="color:red"> Partie 8 : Courbe de flex en fonction de la complétude </span>
+
+## <span style="color:blue"> Importation des données </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+tree <- read.tree("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/REROOT_RAxML_bestTree.ALL_concatenated_cogs.nwk")
+pa <- read_rtab("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Matrice_fusionnee.tsv")
+```
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+fit <- panstripe(pa, tree, family="quasipoisson")
+
+tsv_completion=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Completion_SAGs.tsv", sep="\t", check.names = FALSE, header=FALSE)
+tsv_completion=tsv_completion[,c(1,4)]
+
+#J'enlève MIT9312
+tsv_completion=tsv_completion[-88,]
+
+
+# J'ajoute les autres genrefs
+genrefs=data.frame(V1=c("P9312","MIT9215","AS9601","MIT9202","MIT9301"),V4=c("100","100","100","100","100"))
+tsv_completion=rbind(tsv_completion,genrefs)
+
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/Data_GARDON/Annotation_COGs/All_COGS_max.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+```
+
+## <span style="color:blue"> Récupération des noms des COGS présents par SAGS </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+liste_SAG_COGs <- list()
+
+for (i in 1:nrow(pa)) {
+  SAG=rownames(pa)[i]
+  indices=which(pa[i, ] == 1)
+  COGs=colnames(pa)[indices]
+  liste_SAG_COGs[[SAG]]=COGs
+}
+
+# Supprimer le SAG "P9312" de la liste des COGs
+liste_SAG_COGs=subset(liste_SAG_COGs, !(names(liste_SAG_COGs) %in% c("MED4","MIT9515","NATL1A","NATL2A","MIT0915","MIT1013","MIT1214","MIT0917","MIT0912","MIT0913","SS120","MIT9211","MIT0919","MIT0918","MIT9303","MIT9313")))
+```
+
+## <span style="color:blue"> Liste des COGS flex  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+COG_flex=data_compartiments$COG[data_compartiments$gentype=="flex"]
+
+for (SAG in names(liste_SAG_COGs)) {
+  COGs=liste_SAG_COGs[[SAG]]
+  COGs=COGs[COGs %in% COG_flex]
+  liste_SAG_COGs[[SAG]]=COGs
+}
+```
+
+## <span style="color:blue"> Création d’un df qui contient le nombre de COGS flex par SAGS  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+# Obtenir le nombre de COGs pour chaque SAG
+nombre_COGs=sapply(liste_SAG_COGs, length)
+
+# Créer le dataframe avec le nom du SAG et le nombre de COGs
+df=data.frame(SAG = names(liste_SAG_COGs), Nombre_COGs = nombre_COGs, stringsAsFactors = FALSE)
+```
+
+## <span style="color:blue"> Fusion de df pour avoir le nombre de core en fonction de la complétion  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+colnames(tsv_completion)=c("SAG","completion")
+merged_df=merge(df,tsv_completion, by="SAG")
+merged_df$completion=sub(",",".",merged_df$completion)
+merged_df$completion=as.double(merged_df$completion)
+```
+
+## <span style="color:blue"> Plot  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+#En affichant le nom des points
+ggplot(merged_df, aes(x = completion, y = Nombre_COGs, label = SAG)) +
+  geom_point(size = 0.75) +
+  geom_text(size = 1, angle = 90, hjust = -0.5, vjust = 0, color = "blue") +
+  labs(x = "Complétion", y = "Nombre de COGs flex") +
+  ggtitle("Nombre de COGS flex en fonction de la complétion des SAGS") +
+  geom_smooth(method = "lm", se = FALSE, color="red", size=0.5) +
+  stat_poly_eq(formula = y ~ x, parse = TRUE, aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               label.x.npc = "right", label.y.npc = 0.15) +
+  stat_fit_glance(method = "lm", geom = "text", aes(label = paste("R2 = ", round(..r.squared.., digits = 3))),
+                  x.position = "right", y.position = "top")
+
+
+#Sans afficher le nom des points 
+ggplot(merged_df, aes(x = completion, y = Nombre_COGs, label = SAG, color = ifelse(merged_df$completion == 100, "100%", ifelse(merged_df$completion > 90, "Supérieur à 90%",ifelse(merged_df$completion > 70, "Supérieur à 70%","Inférieure à 70%"))))) +
+  geom_point(size = 0.75) +
+  labs(x = "Complétion", y = "Nombre de COGs flex") +
+  ggtitle("Nombre de COGS flex en fonction de la complétion des SAGS") +
+  geom_smooth(method = "lm", se = FALSE, color = "red", size = 0.5) +
+  annotate("text", x = Inf, y = -Inf, label = paste("y = 131 + 3.21 x     R² =", round(summary(lm(Nombre_COGs ~ completion, data = merged_df))$r.squared, digits = 2)),
+           hjust = 1.3, vjust = -4, color = "black") +
+  scale_color_manual(values = c("100%" = "red","Supérieur à 90%" = "blue", "Supérieur à 70%" = "green", "Inférieure à 70%" = "black"),
+                     name = "Complétion") +
+  theme(legend.position = "top")
+
+```
+
+
+
+
+
+
+
+
+
+# <span style="color:red"> Partie 9 : Courbe de core en fonction de la complétude </span>
+
+## <span style="color:blue"> Importation des données </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+tree <- read.tree("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/REROOT_RAxML_bestTree.ALL_concatenated_cogs.nwk")
+pa <- read_rtab("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Matrice_fusionnee.tsv")
+```
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+fit <- panstripe(pa, tree, family="quasipoisson")
+
+tsv_completion=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Completion_SAGs.tsv", sep="\t", check.names = FALSE, header=FALSE)
+tsv_completion=tsv_completion[,c(1,4)]
+
+#J'enlève MIT9312
+tsv_completion=tsv_completion[-88,]
+
+
+# J'ajoute les autres genrefs
+genrefs=data.frame(V1=c("P9312","MIT9215","AS9601","MIT9202","MIT9301"),V4=c("100","100","100","100","100"))
+tsv_completion=rbind(tsv_completion,genrefs)
+
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/Data_GARDON/Annotation_COGs/All_COGS_max.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+```
+
+## <span style="color:blue"> Récupération des noms des COGS présents par SAGS </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+liste_SAG_COGs <- list()
+
+for (i in 1:nrow(pa)) {
+  SAG=rownames(pa)[i]
+  indices=which(pa[i, ] == 1)
+  COGs=colnames(pa)[indices]
+  liste_SAG_COGs[[SAG]]=COGs
+}
+
+# Supprimer
+liste_SAG_COGs=subset(liste_SAG_COGs, !(names(liste_SAG_COGs) %in% c("MED4","MIT9515","NATL1A","NATL2A","MIT0915","MIT1013","MIT1214","MIT0917","MIT0912","MIT0913","SS120","MIT9211","MIT0919","MIT0918","MIT9303","MIT9313")))
+```
+
+## <span style="color:blue"> Liste des COGS core  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+COG_flex=data_compartiments$COG[data_compartiments$gentype=="core"]
+
+for (SAG in names(liste_SAG_COGs)) {
+  COGs=liste_SAG_COGs[[SAG]]
+  COGs=COGs[COGs %in% COG_flex]
+  liste_SAG_COGs[[SAG]]=COGs
+}
+```
+
+## <span style="color:blue"> Création d’un df qui contient le nombre de COGS flex par SAGS  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+# Obtenir le nombre de COGs pour chaque SAG
+nombre_COGs=sapply(liste_SAG_COGs, length)
+
+# Créer le dataframe avec le nom du SAG et le nombre de COGs
+df=data.frame(SAG = names(liste_SAG_COGs), Nombre_COGs = nombre_COGs, stringsAsFactors = FALSE)
+```
+
+## <span style="color:blue"> Fusion de df pour avoir le nombre de core en fonction de la complétion  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+colnames(tsv_completion)=c("SAG","completion")
+merged_df=merge(df,tsv_completion, by="SAG")
+merged_df$completion=sub(",",".",merged_df$completion)
+merged_df$completion=as.double(merged_df$completion)
+```
+
+## <span style="color:blue"> Plot  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+#En affichant le nom des points
+ggplot(merged_df, aes(x = completion, y = Nombre_COGs, label = SAG)) +
+  geom_point(size = 0.75) +
+  geom_text(size = 1, angle = 90, hjust = -0.5, vjust = 0, color = "blue") +
+  labs(x = "Complétion", y = "Nombre de COGs core") +
+  ggtitle("Nombre de COGS core en fonction de la complétion des SAGS") +
+  geom_smooth(method = "lm", se = FALSE, color="red", size=0.5) +
+  stat_poly_eq(formula = y ~ x, parse = TRUE, aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               label.x.npc = "right", label.y.npc = 0.15) +
+  stat_fit_glance(method = "lm", geom = "text", aes(label = paste("R2 = ", round(..r.squared.., digits = 3))),
+                  x.position = "right", y.position = "top")
+
+
+#Sans afficher le nom des points 
+ggplot(merged_df, aes(x = completion, y = Nombre_COGs, label = SAG, color = ifelse(merged_df$completion == 100, "100%", ifelse(merged_df$completion > 90, "Supérieur à 90%",ifelse(merged_df$completion > 70, "Supérieur à 70%","Inférieure à 70%"))))) +
+  geom_point(size = 0.75) +
+  labs(x = "Complétion", y = "Nombre de COGs core") +
+  ggtitle("Nombre de COGS core en fonction de la complétion des SAGS") +
+  geom_smooth(method = "lm", se = FALSE, color = "red", size = 0.5) +
+  annotate("text", x = Inf, y = -Inf, label = paste("y = 40.9 + 12.1 x     R² =", round(summary(lm(Nombre_COGs ~ completion, data = merged_df))$r.squared, digits = 2)),
+           hjust = 1.3, vjust = -4, color = "black") +
+  scale_color_manual(values = c("100%" = "red","Supérieur à 90%" = "blue", "Supérieur à 70%" = "green", "Inférieure à 70%" = "black"),
+                     name = "Complétion") +
+  theme(legend.position = "top")
+
+```
+
+
+
+# <span style="color:red"> Partie 10 : Courbe de flex en fonction de la complétude avec tous les flexs </span>
+
+## <span style="color:blue"> Importation des données </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+tree <- read.tree("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/REROOT_RAxML_bestTree.ALL_concatenated_cogs.nwk")
+pa <- read_rtab("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Matrice_fusionnee.tsv")
+```
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+fit <- panstripe(pa, tree, family="quasipoisson")
+
+tsv_completion=read.csv("/home/maarque/Donnees_projet/Data/SAGs_reduits/Completion_SAGs.tsv", sep="\t", check.names = FALSE, header=FALSE)
+tsv_completion=tsv_completion[,c(1,4)]
+
+#J'enlève MIT9312
+tsv_completion=tsv_completion[-88,]
+
+
+# J'ajoute les autres genrefs
+genrefs=data.frame(V1=c("P9312","MIT9215","AS9601","MIT9202","MIT9301"),V4=c("100","100","100","100","100"))
+tsv_completion=rbind(tsv_completion,genrefs)
+
+data_compartiments=read.csv("/home/maarque/Donnees_projet/Data/ALL_SAGS_genrefs/Annot_All_COGS.tsv", header=F, sep="\t", check.names = F)
+colnames(data_compartiments)=c("COG","multi/single","gentype","shared","compartiment")
+```
+
+## <span style="color:blue"> Récupération des noms des COGS présents par SAGS </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+liste_SAG_COGs <- list()
+
+for (i in 1:nrow(pa)) {
+  SAG=rownames(pa)[i]
+  indices=which(pa[i, ] == 1)
+  COGs=colnames(pa)[indices]
+  liste_SAG_COGs[[SAG]]=COGs
+}
+
+# Supprimer le SAG "P9312" de la liste des COGs
+liste_SAG_COGs=subset(liste_SAG_COGs, !(names(liste_SAG_COGs) %in% c("MED4","MIT9515","NATL1A","NATL2A","MIT0915","MIT1013","MIT1214","MIT0917","MIT0912","MIT0913","SS120","MIT9211","MIT0919","MIT0918","MIT9303","MIT9313")))
+```
+
+## <span style="color:blue"> Liste des COGS flex  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+COG_flex=data_compartiments$COG[data_compartiments$gentype=="flex"]
+
+for (SAG in names(liste_SAG_COGs)) {
+  COGs=liste_SAG_COGs[[SAG]]
+  COGs=COGs[COGs %in% COG_flex]
+  liste_SAG_COGs[[SAG]]=COGs
+}
+```
+
+## <span style="color:blue"> Création d’un df qui contient le nombre de COGS flex par SAGS  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+# Obtenir le nombre de COGs pour chaque SAG
+nombre_COGs=sapply(liste_SAG_COGs, length)
+
+# Créer le dataframe avec le nom du SAG et le nombre de COGs
+df=data.frame(SAG = names(liste_SAG_COGs), Nombre_COGs = nombre_COGs, stringsAsFactors = FALSE)
+```
+
+## <span style="color:blue"> Fusion de df pour avoir le nombre de core en fonction de la complétion  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+colnames(tsv_completion)=c("SAG","completion")
+merged_df=merge(df,tsv_completion, by="SAG")
+merged_df$completion=sub(",",".",merged_df$completion)
+merged_df$completion=as.double(merged_df$completion)
+```
+
+## <span style="color:blue"> Plot  </span>
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+#En affichant le nom des points
+ggplot(merged_df, aes(x = completion, y = Nombre_COGs, label = SAG)) +
+  geom_point(size = 0.75) +
+  geom_text(size = 1, angle = 90, hjust = -0.5, vjust = 0, color = "blue") +
+  labs(x = "Complétion", y = "Nombre de COGs flex") +
+  ggtitle("Nombre de COGS flex en fonction de la complétion des SAGS") +
+  geom_smooth(method = "lm", se = FALSE, color="red", size=0.5) +
+  stat_poly_eq(formula = y ~ x, parse = TRUE, aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               label.x.npc = "right", label.y.npc = 0.15) +
+  stat_fit_glance(method = "lm", geom = "text", aes(label = paste("R2 = ", round(..r.squared.., digits = 3))),
+                  x.position = "right", y.position = "top")
+
+
+#Sans afficher le nom des points 
+ggplot(merged_df, aes(x = completion, y = Nombre_COGs, label = SAG, color = ifelse(merged_df$completion == 100, "100%", ifelse(merged_df$completion > 90, "Supérieur à 90%",ifelse(merged_df$completion > 70, "Supérieur à 70%","Inférieure à 70%"))))) +
+  geom_point(size = 0.75) +
+  labs(x = "Complétion", y = "Nombre de COGs flex") +
+  ggtitle("Nombre de COGS flex en fonction de la complétion des SAGS") +
+  geom_smooth(method = "lm", se = FALSE, color = "red", size = 0.5) +
+  annotate("text", x = Inf, y = -Inf, label = paste("y = 114 + 3.5 x     R² =", round(summary(lm(Nombre_COGs ~ completion, data = merged_df))$r.squared, digits = 2)),
+           hjust = 1.3, vjust = -4, color = "black") +
+  scale_color_manual(values = c("100%" = "red","Supérieur à 90%" = "blue", "Supérieur à 70%" = "green", "Inférieure à 70%" = "black"),
+                     name = "Complétion") +
+  theme(legend.position = "top")
+
+```
+
+
+# <span style="color:red"> Partie 11 : Autres tests statistiques </span>
+
+## <span style="color:blue"> Pour I/NI en fonction du core et flex de 18 vs 7 </span>
+#### Question : Y'a-t-il une association significative entre les I/NI du core et flex des 18 SAGS vs 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+
+data=matrix(c(3392,614,228,1338), nrow = 2, ncol = 2, dimnames = list(c("18", "7"), c("Impacted", "Not_Impacted")))
+data3=fisher.test(data)
+print(data3)
+print(data3$p.value)
+```
+
+## <span style="color:blue"> Pour I/NI en fonction du core de 18 vs 7 </span>
+#### Question : Y'a-t-il une association significative entre les I/NI du core des 18 SAGS vs 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+
+data=matrix(c(1141,166,214,1189), nrow = 2, ncol = 2, dimnames = list(c("18", "7"), c("Impacted", "Not_Impacted")))
+data4=fisher.test(data)
+print(data4)
+print(data4$p.value)
+```
+
+## <span style="color:blue"> Pour gain no gain en fonction du core de 18 vs 7 </span>
+#### Question : Y'a-t-il une association significative entre les rapports gains/nogains du core des 18 SAGS vs 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+data=matrix(c(174,104,1181,62), nrow = 2, ncol = 2, dimnames = list(c("18", "7"), c("Gains", "Not_Gains")))
+data=fisher.test(data)
+print(data)
+print(data$p.value)
+```
+
+## <span style="color:blue"> Pour loss no loss en fonction du core de 18 vs 7 </span>
+#### Question : Y'a-t-il une association significative entre les rapports loss/noloss du core des 18 SAGS vs 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+
+data=matrix(c(1140,65,1,101), nrow = 2, ncol = 2, dimnames = list(c("18", "7"), c("Loss", "Not_Loss")))
+data2=fisher.test(data)
+print(data2)
+print(data2$p.value)
+```
+
+## <span style="color:blue"> Pour loss/non loss en fonction de compartiment et gentype : gentype7 </span>
+#### Question : Y'a-t-il une association significative entre les loss/noloss du core/flex des 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_gentype7_gain=matrix(c(65,107,101,341), nrow = 2, ncol = 2, dimnames = list(c("Core", "Flex"), c("Loss", "Not_Loss")))
+gentype7_gain=fisher.test(mat_gentype7_gain)
+print(gentype7_gain)
+print(gentype7_gain$p.value)
+```
+
+
+## <span style="color:blue"> Pour loss/non loss en fonction de compartiment et gentype : compart7 pour core </span>
+#### Question : Y'a-t-il une association significative entre les rapports loss/noloss des compartiments du core des 7 genrefs : oui
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_compart7_core_gain=matrix(c(58,7,91,10), nrow = 2, ncol = 2, dimnames = list(c("backbone", "ISLs"), c("Loss", "Not_Loss")))
+compart7_core_gain=fisher.test(mat_compart7_core_gain)
+print(compart7_core_gain)
+print(compart7_core_gain$p.value)
+```
+
+
+
+# <span style="color:red"> Partie 12 : Gain/no gain sur la totalité et pas seulement les impactés </span>
+
+## <span style="color:blue"> Pour gains/non gains en fonction de compartiment et gentype : gentype18 </span>
+#### Question : Y'a-t-il une association significative entre les gain/no gain du core et flex des 18 SAGS : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_gentype18_gain=matrix(c(174,2067,1181,198), nrow = 2, ncol = 2, dimnames = list(c("Core", "Flex"), c("Gains", "Not_Gains")))
+gentype18_gain=fisher.test(mat_gentype18_gain)
+print(gentype18_gain)
+print(gentype18_gain$p.value)
+```
+
+## <span style="color:blue"> Pour gains/non gains en fonction de compartiment et gentype : gentype7 </span>
+#### Question : Y'a-t-il une association significative entre les gain/no gain du core et flex des 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_gentype7_gain=matrix(c(104,349,1251,946), nrow = 2, ncol = 2, dimnames = list(c("Core", "Flex"), c("Gains", "Not_Gains")))
+gentype7_gain=fisher.test(mat_gentype7_gain)
+print(gentype7_gain)
+print(gentype7_gain$p.value)
+```
+
+## <span style="color:blue"> Pour gains/non gains en fonction de compartiment et gentype : compart18 pour core </span>
+#### Question : Y'a-t-il une association significative entre les gain/no gain du core ISLS/backbone des 18 SAGS : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_compart18_core_gain=matrix(c(158,16,1147,34), nrow = 2, ncol = 2, dimnames = list(c("backbone", "ISLs"), c("Gains", "Not_Gains")))
+compart18_core_gain=fisher.test(mat_compart18_core_gain)
+print(compart18_core_gain)
+print(compart18_core_gain$p.value)
+```
+
+## <span style="color:blue"> Pour gains/non gains en fonction de compartiment et gentype : compart7 pour core </span>
+#### Question : Y'a-t-il une association significative entre les gain/no gain du core ISLS/backbone des 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_compart7_core_gain=matrix(c(94,10,1211,40), nrow = 2, ncol = 2, dimnames = list(c("backbone", "ISLs"), c("Gains", "Not_Gains")))
+compart7_core_gain=fisher.test(mat_compart7_core_gain)
+print(compart7_core_gain)
+print(compart7_core_gain$p.value)
+```
+
+## <span style="color:blue"> Pour gain no gain en fonction du core de 18 vs 7 </span>
+#### Question : Y'a-t-il une association significative entre les gain/no gain du core entre les 18 SAGS et les 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+
+data=matrix(c(174,104,1181,1251), nrow = 2, ncol = 2, dimnames = list(c("18", "7"), c("Gains", "Not_Gains")))
+data=fisher.test(data)
+print(data)
+print(data$p.value)
+```
+
+## <span style="color:blue"> Pour loss no loss en fonction du core de 18 vs 7 </span>
+#### Question : Y'a-t-il une association significative entre les loss/non loss du core entre les 18 SAGS et les 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+
+data=matrix(c(1140,65,215,1290), nrow = 2, ncol = 2, dimnames = list(c("18", "7"), c("Loss", "Not_Loss")))
+data2=fisher.test(data)
+print(data2)
+print(data2$p.value)
+```
+
+## <span style="color:blue"> Pour loss/non loss en fonction de compartiment et gentype : gentype7 </span>
+#### Question : Y'a-t-il une association significative entre les loss/non loss dans le core et flex des 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_gentype7_gain=matrix(c(65,107,1290,597), nrow = 2, ncol = 2, dimnames = list(c("Core", "Flex"), c("Loss", "Not_Loss")))
+gentype7_gain=fisher.test(mat_gentype7_gain)
+print(gentype7_gain)
+print(gentype7_gain$p.value)
+```
+
+## <span style="color:blue"> Pour loss/non loss en fonction de compartiment et gentype : compart7 pour core </span>
+#### Question : Y'a-t-il une association significative entre les loss/non loss dans le backbone et les ilots pour le core des 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+mat_compart7_core_gain=matrix(c(58,7,1247,43), nrow = 2, ncol = 2, dimnames = list(c("backbone", "ISLs"), c("Loss", "Not_Loss")))
+compart7_core_gain=fisher.test(mat_compart7_core_gain)
+print(compart7_core_gain)
+print(compart7_core_gain$p.value)
+```
+
+## <span style="color:blue"> Pour BB/ISLS vs core/flex des impactés : 18 </span>
+#### Question : Y'a-t-il une association significative entre le backbone et les ilôts pour les génomes core et flex pour les 18 SAGS : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+
+data=matrix(c(1091,1404,50,847), nrow = 2, ncol = 2, dimnames = list(c("Core", "Flex"), c("backbone", "ISLS")))
+data=fisher.test(data)
+print(data)
+print(data$p.value)
+```
+
+## <span style="color:blue"> Pour BB/ISLS vs core/flex des impactés : 7 </span>
+#### Question : Y'a-t-il une association significative entre le backbone et les ilôts pour les génomes core et flex pour les 7 genrefs : non
+
+```{r, include = TRUE, message=FALSE, warning=FALSE, error=FALSE}
+
+data=matrix(c(149,179,17,269), nrow = 2, ncol = 2, dimnames = list(c("Core", "Flex"), c("backbone", "ISLS")))
+data=fisher.test(data)
+print(data)
+print(data$p.value)
+```
+
+
+
